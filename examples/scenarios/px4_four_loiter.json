@@ -1,0 +1,31 @@
+{
+  "schema": "swarm-px4-editor-fleet-v1",
+  "snapshots": [
+    {"drone_id": 0, "state": [300, 0, 0, -0.15], "speed": 15, "altitude": 60, "cruise_altitude": 60},
+    {"drone_id": 1, "state": [300, -400, 0, -0.15], "speed": 15, "altitude": 70, "cruise_altitude": 70},
+    {"drone_id": 2, "state": [-100, 0, 0, -0.15], "speed": 15, "altitude": 80, "cruise_altitude": 80},
+    {"drone_id": 3, "state": [-100, -400, 0, -0.15], "speed": 15, "altitude": 90, "cruise_altitude": 90}
+  ],
+  "mission": {
+    "seed": 19,
+    "target": [1200, 500],
+    "target_altitude": 80,
+    "target_radius": 6,
+    "horizon": 200,
+    "arrival_deadline": null,
+    "post_arrival_time": 5,
+    "activation_time": 40,
+    "min_extra_loiter": 0,
+    "max_extra_loiter": 0,
+    "approach_spread_deg": 0,
+    "cruise_altitude_range": null,
+    "descent_angle_deg": 0,
+    "obstacle_clearance": 5,
+    "separation": 30,
+    "obstacles": [
+      {"kind": "cylinder", "center": [200, 120, 75], "half_extents": [100, 100, 75]},
+      {"kind": "box", "center": [320, 190, 65], "half_extents": [60, 60, 65]},
+      {"kind": "cylinder", "center": [800, 200, 75], "half_extents": [125, 125, 75]}
+    ]
+  }
+}

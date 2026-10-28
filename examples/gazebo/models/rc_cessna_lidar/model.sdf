@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <!-- Inherit the pinned official airframe, adding a real simulated range sensor.
+       Its aerodynamic/actuator plugins and PX4 safety parameters stay intact.
+       Sensor geometry follows PX4's x500_lidar_down convention (one beam).
+       This lightweight 1 g test sensor is not a calibrated physical accessory. -->
+  <model name="rc_cessna_lidar">
+    <include merge="true"><uri>model://rc_cessna</uri></include>
+    <joint name="lidar_sensor_joint" type="fixed">
+      <parent>base_link</parent><child>lidar_sensor_link</child>
+    </joint>
+    <link name="lidar_sensor_link">
+      <pose relative_to="base_link">0 0 -0.05 0 1.5707963267948966 0</pose>
+      <inertial>
+        <mass>0.001</mass>
+        <inertia>
+          <ixx>0.00001</ixx><iyy>0.00001</iyy><izz>0.00001</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <sensor name="lidar" type="gpu_lidar">
+        <gz_frame_id>lidar_sensor_link</gz_frame_id>
+        <!-- The pinned PX4 LaserScan bridge recognizes this local sensor pose
+             as DOWNWARD_FACING. The link's pitch directs the ray toward ground. -->
+        <pose>0 0 0 3.141592653589793 0 0</pose>
+        <update_rate>30</update_rate>
+        <ray>
+          <!-- Gold destination annotations use bit 1 only, not real terrain. -->
+          <visibility_mask>4294967294</visibility_mask>
+          <scan>
+            <horizontal><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></horizontal>
+            <vertical><samples>1</samples><resolution>1</resolution><min_angle>0</min_angle><max_angle>0</max_angle></vertical>
+          </scan>
+          <range><min>0.1</min><max>100</max><resolution>0.01</resolution></range>
+          <noise><type>gaussian</type><mean>0</mean><stddev>0.02</stddev></noise>
+        </ray>
+        <always_on>1</always_on><visualize>false</visualize>
+      </sensor>
+    </link>
+  </model>
+</sdf>

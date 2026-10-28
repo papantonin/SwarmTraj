@@ -1,0 +1,381 @@
+"""Reproducible 1–5 aircraft planning campaign with failure-preserving artifacts.
+
+Runs one isolated mission at a time. External timeouts are censored observations,
+never planner infeasibility statuses. Resume uses the immutable manifest and
+source hashes. No planner, physical limit, or acceptance criterion is changed.
+"""
+
+import argparse
+from collections import Counter
+from dataclasses import asdict, replace
+from datetime import datetime, timezone
+import gzip
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import resource
+import signal
+import subprocess
+import sys
+from time import perf_counter
+import traceback
+
+import numpy as np
+import scipy
+
+from benchmark_planning import signature
+from swarm_sim.trajectory2d import Config, Snapshot, plan_mission, separate_loiter_snapshot
+from swarm_sim.trajectory2d.dynamics import Limits
+from swarm_sim.trajectory2d.flight3d import FlightLimits
+from swarm_sim.trajectory2d.obstacles import Obstacle, load_obstacles
+from swarm_sim.trajectory2d.planning import mission_document
+
+
+ROOT = Path(__file__).resolve().parents[1]
+FAMILIES = ('baseline', 'spread180', 'spread360', 'obstacles', 'short_horizon',
+            'deadline', 'fixed_departure', 'high_separation', 'dense',
+            'heterogeneous', 'rich_strict', 'grid')
+MODES = ('adaptive_first', 'adaptive_margin', 'fixed_first', 'unguided',
+         'id_order', 'rejection_feedback')
+
+
+def write_json(path, value):
+    with Path(path).open('x', encoding='utf-8') as stream:
+        json.dump(value, stream, indent=2, allow_nan=False)
+
+
+def sources():
+    files = [Path(__file__).resolve(), ROOT / 'scripts/benchmark_planning.py',
+             *sorted((ROOT / 'src/swarm_sim/trajectory2d').glob('*.py'))]
+    return {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+
+
+def base_case(n, seed):
+    config = Config(dimensions=3, target_altitude=30, max_descent_rate=10,
+        descent_angle_deg=30, cruise_altitude_range=(30, 120), seed=seed,
+        planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
+        selection_policy='max_margin', conflict_guidance='witness', obstacle_routing='spatial')
+    snapshots = tuple(replace(s, altitude=30+20*k)
+                      for k, s in enumerate(separate_loiter_snapshot(n)))
+    return snapshots, config
+
+
+def family_case(n, seed, family):
+    snapshots, config = base_case(n, seed)
+    if family == 'spread180':
+        config = replace(config, approach_spread_deg=180, horizon=150)
+    elif family == 'spread360':
+        config = replace(config, approach_spread_deg=360, horizon=240)
+    elif family == 'obstacles':
+        config = replace(config, target=(500, 500), horizon=210, approach_spread_deg=180,
+            obstacles=load_obstacles(ROOT / 'examples/scenarios/static_obstacles.json'))
+    elif family == 'short_horizon':
+        config = replace(config, horizon=45)
+    elif family == 'deadline':
+        config = replace(config, horizon=150, arrival_deadline=45)
+    elif family == 'fixed_departure':
+        config = replace(config, max_extra_loiter=0, horizon=150, approach_spread_deg=180)
+    elif family == 'high_separation':
+        config = replace(config, separation=30, horizon=150, approach_spread_deg=180)
+    elif family == 'dense':
+        snapshots = tuple(replace(s, altitude=60) for s in separate_loiter_snapshot(n, spacing=60))
+        config = replace(config, horizon=150, descent_angle_deg=0)
+    elif family == 'heterogeneous':
+        snapshots = tuple(s.with_speed(10+k, config.limits) for k, s in enumerate(snapshots))
+        config = replace(config, horizon=150, approach_spread_deg=180)
+    elif family == 'rich_strict':
+        config = replace(config, target=(500, 500), horizon=210, approach_spread_deg=180,
+            cruise_levels=2, speed_profile='smooth', speed_profile_range=(10, 14))
+    elif family == 'grid':
+        config = replace(config, horizon=150, approach_spread_deg=180,
+            reservation_policy='grid', interval_guidance='safe_windows')
+    elif family != 'baseline':
+        raise ValueError(f'unknown family: {family}')
+    return snapshots, config
+
+
+def random_case(n, scene_seed):
+    """Stratified input draws; seeds describe scenes and planner RNG separately."""
+    rng = np.random.default_rng(scene_seed)
+    snapshots, config = base_case(n, int(rng.integers(0, 1000000)))
+    radius, spacing = float(rng.uniform(30, 65)), float(rng.uniform(150, 250))
+    shift = rng.uniform(-100, 100, 2)
+    angle = float(rng.uniform(-np.pi, np.pi))
+    rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
+    snapshots = tuple(replace(s, state=(*map(float, rotation @ np.array(s.state[:2]) + shift),
+        float(s.state[2]+angle), s.state[3]), altitude=float(rng.uniform(40, 115)))
+        .with_speed(float(rng.uniform(10, 14)), config.limits)
+        for s in separate_loiter_snapshot(n, radius=radius, spacing=spacing))
+    # Keep mission-level draws comparable across aircraft counts even though
+    # each fleet consumes a different number of initial-state draws.
+    rng = np.random.default_rng(np.random.SeedSequence([scene_seed, 1]))
+    target = tuple(map(float, rng.uniform((300, -250), (650, 550))))
+    config = replace(config, target=target, target_altitude=float(rng.uniform(25, 60)),
+        horizon=float(rng.choice((150, 180, 210))), descent_angle_deg=float(rng.choice((0, 15, 30))),
+        approach_spread_deg=float(rng.choice((0, 90, 180, 360))),
+        max_extra_loiter=float(rng.choice((0, 10, 22))), separation=float(rng.choice((8, 15, 30))))
+    return snapshots, config
+
+
+def make_jobs(counts, seeds, random_scenes, suites):
+    jobs = []
+    def add(suite, family, n, seed, snapshots, config, expected=None, **extra):
+        jobs.append({'id': f'{suite}-{family}-n{n}-s{seed}', 'suite': suite, 'family': family,
+            'num_drones': n, 'seed': seed, 'config': asdict(config),
+            'snapshots': [asdict(s) for s in snapshots], 'expected_status': expected, **extra})
+    if 'core' in suites:
+        for family in FAMILIES:
+            for seed in seeds:
+                for n in counts:
+                    add('core', family, n, seed, *family_case(n, seed, family))
+    if 'random' in suites:
+        for scene in range(random_scenes):
+            for n in counts:
+                add('random', 'stratified', n, 1000+scene, *random_case(n, 1000+scene))
+    if 'ablation' in suites:
+        for seed in seeds[:2]:
+            for n in counts:
+                snapshots, config = family_case(n, seed, 'spread180')
+                for mode in MODES:
+                    changes = {'adaptive_first': {'selection_policy': 'first'},
+                        'adaptive_margin': {}, 'fixed_first': {'planning_strategy': 'fixed', 'selection_policy': 'first'},
+                        'unguided': {'conflict_guidance': 'none'}, 'id_order': {'search_order': 'id'},
+                        'rejection_feedback': {'candidate_guidance': 'rejections'}}[mode]
+                    add('ablation', mode, n, seed, snapshots, replace(config, **changes),
+                        comparison_group=f'spread180-n{n}-s{seed}')
+    if 'replay' in suites:
+        for n in counts:
+            snapshots, config = base_case(n, seeds[0])
+            for mode, workers in (('serial', 1), ('parallel2', 2)):
+                add('replay', mode, n, seeds[0], snapshots, replace(config, planning_workers=workers),
+                    comparison_group=f'baseline-n{n}-s{seeds[0]}')
+    if 'controls' in suites:
+        for n in counts:
+            snapshots, config = base_case(n, seeds[0])
+            add('controls', 'unreachable', n, seeds[0], snapshots,
+                replace(config, target=(100000, 100000)), 'destination_unreachable_within_horizon')
+            bad = (replace(snapshots[0], speed=100), *snapshots[1:])
+            add('controls', 'invalid_speed', n, seeds[0], bad, config, 'invalid_initial_state')
+            obstacle = Obstacle.cylinder(*config.target, 25, 0, 80)
+            add('controls', 'blocked_target', n, seeds[0], snapshots,
+                replace(config, obstacles=(obstacle,)), 'target_region_obstructed')
+            if n > 1:
+                duplicate = (snapshots[0], replace(snapshots[0], drone_id=1), *snapshots[2:])
+                add('controls', 'initial_collision', n, seeds[0], duplicate, config, 'initial_separation_violation')
+    return jobs
+
+
+def decode(job):
+    fields = dict(job['config'])
+    fields['limits'] = Limits(**fields['limits'])
+    fields['flight'] = FlightLimits(**fields['flight'])
+    fields['obstacles'] = tuple(Obstacle(**o) for o in fields['obstacles'])
+    fields['aircraft_profiles'] = ()
+    for key in ('target', 'cruise_altitude_range', 'speed_profile_range'):
+        if fields[key] is not None:
+            fields[key] = tuple(fields[key])
+    snapshots = tuple(Snapshot(**{**s, 'state': tuple(s['state'])}) for s in job['snapshots'])
+    return snapshots, Config(**fields)
+
+
+def worker(directory, job_id):
+    manifest = json.loads((directory / 'manifest.json').read_text())
+    job = next(j for j in manifest['jobs'] if j['id'] == job_id)
+    snapshots, config = decode(job)
+    if sources() != manifest['source_sha256']:
+        raise RuntimeError('source changed before worker start')
+    start = perf_counter()
+    result = plan_mission(snapshots, config)
+    planning_s = perf_counter() - start
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    children = resource.getrusage(resource.RUSAGE_CHILDREN)
+    document = mission_document(result, config, snapshots)
+    with gzip.open(directory / 'missions' / f'{job_id}.json.gz', 'xt', encoding='utf-8') as stream:
+        json.dump(document, stream, allow_nan=False)
+    catalogs = result.diagnostics.get('catalogs', [])
+    pairs = result.diagnostics.get('selection', {}).get('selected_pairs', [])
+    record = {'type': 'result', 'id': job_id, 'status': result.status, 'reason': result.reason,
+        'planning_wall_s': planning_s, 'timings': result.timings, 'counts': result.counts,
+        'search_nodes': result.search_nodes, 'diagnostics': result.diagnostics,
+        'signature_sha256': signature(result), 'mission_sha256': document['sha256'],
+        'attempted': sum(c['attempted'] for c in catalogs),
+        'accepted_candidates': sum(c['accepted'] for c in catalogs),
+        'minimum_distance_lower_bound_m': result.minimum_distance_lower_bound,
+        'required_distance_m': result.required_distance,
+        'minimum_pair_slack_m': min((p['extra_margin_m'] for p in pairs), default=None),
+        'arrival_times_s': [p.arrival_time for p in result.plans],
+        'release_times_s': [p.release_time for p in result.plans],
+        'path_lengths_m': [float(np.linalg.norm(np.diff(p.positions, axis=0), axis=1).sum()) for p in result.plans],
+        'self_peak_rss_kib': usage.ru_maxrss, 'largest_child_peak_rss_kib': children.ru_maxrss,
+        'cpu_s_including_imports_and_children': usage.ru_utime+usage.ru_stime+children.ru_utime+children.ru_stime,
+        'executions': []}
+    # Save planning completion before optional execution, so a later timeout
+    # cannot hide a completed plan. The parent retains the checkpoint verbatim.
+    write_json(directory / 'checkpoints' / f'{job_id}.json', record)
+    if (manifest['execute'] and result.validated and job['suite'] == 'core'
+            and job['seed'] == manifest['seeds'][0]
+            and job['family'] in ('baseline', 'obstacles', 'heterogeneous')):
+        from swarm_sim.trajectory2d.execution import simulate
+        from swarm_sim.trajectory2d.perturbations import position_bias_vectors
+        for profile in ('nominal', 'gust_sensor', 'outside_clock'):
+            before = perf_counter()
+            settings = {}
+            if profile == 'gust_sensor':
+                settings = {'wind': .1, 'wind_model': 'gust', 'wind_heading_deg': 15.,
+                    'clock_offsets': np.linspace(-.03, .03, len(snapshots)),
+                    'clock_drifts': np.linspace(-.0001, .0001, len(snapshots)),
+                    'position_biases': position_bias_vectors([p.drone_id for p in result.plans], .05, 3),
+                    'position_noise': .01, 'disturbance_seed': 23}
+            elif profile == 'outside_clock':
+                settings = {'clock_offsets': np.full(len(snapshots), .4)}
+            report = simulate(result.plans, config, **settings).report
+            unchanged = signature(result) == record['signature_sha256']
+            record['executions'].append({'profile': profile, 'execution_wall_s': perf_counter()-before,
+                'same_plans': unchanged, 'expected_acceptance': profile != 'outside_clock',
+                'expectation_met': unchanged and report['execution_validated'] == (profile != 'outside_clock'),
+                'report': report})
+            # Atomic replace of our own checkpoint; no user input is overwritten.
+            temp = directory / 'checkpoints' / f'{job_id}.tmp'
+            temp.write_text(json.dumps(record, allow_nan=False))
+            temp.replace(directory / 'checkpoints' / f'{job_id}.json')
+    if sources() != manifest['source_sha256']:
+        raise RuntimeError('source changed during worker execution')
+    write_json(directory / 'completed' / f'{job_id}.json', record)
+
+
+def run(directory, manifest):
+    journal = directory / 'journal.jsonl'
+    previous = [json.loads(line) for line in journal.read_text().splitlines()] if journal.exists() else []
+    done = {r['id'] for r in previous}
+    env = dict(os.environ, OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', MKL_NUM_THREADS='1')
+    for index, job in enumerate(manifest['jobs'], 1):
+        if job['id'] in done:
+            continue
+        if sources() != manifest['source_sha256']:
+            raise RuntimeError('campaign source changed; create a separate campaign')
+        job_id = job['id']
+        # A resumed, interrupted job may have partial own files. Preserve them
+        # in a numbered attempt directory before trying it again.
+        stale = [(directory / p / f'{job_id}{suffix}') for p, suffix in
+                 (('missions', '.json.gz'), ('checkpoints', '.json'), ('completed', '.json'), ('logs', '.log'))]
+        existing = [p for p in stale if p.exists()]
+        if existing:
+            attempt = directory / 'interrupted' / f'{job_id}-{datetime.now().strftime("%Y%m%d%H%M%S%f")}'
+            attempt.mkdir(parents=True)
+            for path in existing:
+                path.rename(attempt / path.name)
+        print(f'START {index}/{len(manifest["jobs"])} {job_id}', flush=True)
+        started = datetime.now(timezone.utc).isoformat()
+        start = perf_counter()
+        with (directory / 'logs' / f'{job_id}.log').open('x') as log:
+            process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--worker',
+                job_id, '--output', str(directory)], stdout=log, stderr=subprocess.STDOUT,
+                env=env, start_new_session=True)
+            timed_out = False
+            try:
+                process.wait(timeout=manifest['timeout_s'])
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+        elapsed = perf_counter()-start
+        completed = directory / 'completed' / f'{job_id}.json'
+        checkpoint = directory / 'checkpoints' / f'{job_id}.json'
+        if completed.exists() and process.returncode == 0 and not timed_out:
+            record = json.loads(completed.read_text())
+            record['completion'] = 'complete'
+        elif checkpoint.exists():
+            record = json.loads(checkpoint.read_text())
+            record['completion'] = 'execution_timeout' if timed_out else 'worker_error_after_planning'
+        else:
+            record = {'id': job_id, 'type': 'result', 'completion': 'planning_timeout' if timed_out else 'worker_error',
+                      'status': None}
+        record.update({k: job[k] for k in ('suite', 'family', 'num_drones', 'seed', 'expected_status')})
+        record.update(started_utc=started, process_wall_s=elapsed, returncode=process.returncode,
+                      timeout_s=manifest['timeout_s'])
+        if job['expected_status'] is not None:
+            record['expectation_met'] = record['completion'] == 'complete' and record['status'] == job['expected_status']
+        with journal.open('a', encoding='utf-8') as stream:
+            stream.write(json.dumps(record, allow_nan=False)+'\n')
+            stream.flush()
+            os.fsync(stream.fileno())
+        print(json.dumps({'id': job_id, 'status': record['status'], 'completion': record['completion'],
+            'seconds': round(elapsed, 3), 'attempted': record.get('attempted')}), flush=True)
+        if sources() != manifest['source_sha256']:
+            raise RuntimeError('source changed during campaign')
+        if 'worker_error' in record['completion']:
+            raise RuntimeError(f'worker failed: inspect {directory / "logs" / (job_id+".log")}')
+    rows = [json.loads(line) for line in journal.read_text().splitlines()]
+    if len(rows) != len(manifest['jobs']) or len({r['id'] for r in rows}) != len(rows):
+        raise RuntimeError('journal coverage/uniqueness check failed')
+    print('COMPLETE '+json.dumps(dict(Counter(r['status'] or r['completion'] for r in rows))), flush=True)
+    return 2 if any(r.get('expectation_met') is False or any(not e['expectation_met']
+        for e in r.get('executions', [])) for r in rows) else 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--counts', type=int, nargs='+', default=[1, 2, 3, 4, 5])
+    parser.add_argument('--seeds', type=int, nargs='+', default=[7, 19, 42])
+    parser.add_argument('--random-scenes', type=int, default=10)
+    parser.add_argument('--suites', nargs='+', choices=('controls', 'core', 'random', 'ablation', 'replay'),
+                        default=['controls', 'core', 'random', 'ablation', 'replay'])
+    parser.add_argument('--timeout', type=float, default=120)
+    parser.add_argument('--execute', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--worker', help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    directory = args.output.resolve()
+    if args.worker:
+        try:
+            worker(directory, args.worker)
+        except Exception:
+            traceback.print_exc()
+            return 1
+        return 0
+    if (not args.counts or any(n not in range(1, 6) for n in args.counts)
+            or not args.seeds or min(args.seeds) < 0 or args.random_scenes < 0
+            or not np.isfinite(args.timeout) or args.timeout <= 0):
+        parser.error('counts must be 1–5; seeds/scenes nonnegative; timeout positive and finite')
+    for name in ('counts', 'seeds', 'suites'):
+        values = getattr(args, name)
+        if len(set(values)) != len(values):
+            parser.error(f'duplicate {name} are not allowed')
+    if args.resume:
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        if manifest['source_sha256'] != sources():
+            parser.error('source differs from saved campaign')
+    else:
+        if directory.exists():
+            parser.error('output directory must be new (or use --resume)')
+        directory.mkdir(parents=True)
+        for folder in ('missions', 'checkpoints', 'completed', 'logs'):
+            (directory / folder).mkdir()
+        # Controls first, followed by balanced families and seed/count sweeps.
+        jobs = make_jobs(args.counts, args.seeds, args.random_scenes, ['controls'] if args.suites == ['controls'] else [])
+        if args.suites != ['controls']:
+            jobs = make_jobs(args.counts, args.seeds, args.random_scenes, args.suites)
+            jobs.sort(key=lambda j: j['suite'] != 'controls')
+        manifest = {'schema': 'swarm-scaling-campaign-v1', 'created_utc': datetime.now(timezone.utc).isoformat(),
+            'source_sha256': sources(), 'python': platform.python_version(), 'numpy': np.__version__,
+            'scipy': scipy.__version__, 'platform': platform.platform(), 'logical_cpus': os.cpu_count(),
+            'cpu_info': subprocess.check_output(['lscpu'], text=True),
+            'mem_info': Path('/proc/meminfo').read_text(), 'counts': args.counts, 'seeds': args.seeds,
+            'timeout_s': args.timeout, 'execute': args.execute, 'jobs': jobs,
+            'scope': 'coupled point-mass planner; no Gazebo/PX4; serialized jobs; no hard real-time guarantee',
+            'timing_scope': 'planning_wall_s excludes imports/export/execution; process_wall_s includes all',
+            'memory_scope': 'Linux ru_maxrss: parent peak and largest child peak, not simultaneous fleet RSS',
+            'blas_threads': 1}
+        write_json(directory / 'manifest.json', manifest)
+    return run(directory, manifest)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

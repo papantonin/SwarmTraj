@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <!-- PX4 default-world physics/origin; enlarged ground visual and collision
+       footprint cover the whole reference and landing pattern. GPU lidar sees
+       visual geometry: the upstream 500 m ground tile ends before our approach. -->
+  <world name="default">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+    <scene>
+      <grid>false</grid><ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.28 0.58 0.9 1</background><shadows>true</shadows>
+      <!-- Built-in static Ogre2 skybox; no volumetric clouds or extra geometry. -->
+      <sky/>
+    </scene>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>6000 6000</size></plane></geometry>
+          <surface><friction><ode/></friction><bounce/><contact/></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><mesh><uri>../meshes/ground.dae</uri></mesh></geometry>
+          <material>
+            <ambient>0.5 0.6 0.45 1</ambient><diffuse>1 1 1 1</diffuse>
+            <specular>0.02 0.02 0.02 1</specular>
+            <pbr><metal>
+              <albedo_map>../materials/textures/grass.ppm</albedo_map>
+              <metalness>0</metalness><roughness>1</roughness>
+            </metal></pbr>
+          </material>
+        </visual>
+        <inertial>
+          <mass>1</mass>
+          <inertia><ixx>1</ixx><iyy>1</iyy><izz>1</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <self_collide>false</self_collide>
+    </model>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 0 0</pose><cast_shadows>true</cast_shadows>
+      <intensity>1</intensity><direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse><specular>0.271 0.271 0.271 1</specular>
+      <attenuation><range>2000</range><linear>0</linear><constant>1</constant><quadratic>0</quadratic></attenuation>
+    </light>
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model><world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg><longitude_deg>8.546163739800146</longitude_deg><elevation>0</elevation>
+    </spherical_coordinates>
+  </world>
+</sdf>

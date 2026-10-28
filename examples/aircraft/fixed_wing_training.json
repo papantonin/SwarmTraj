@@ -1,0 +1,31 @@
+{
+  "schema": "swarm-aircraft-profile-v1",
+  "model": "coordinated_point_mass_v1",
+  "unit_system": "SI",
+  "name": "fixed_wing_training_no_airbrake",
+  "description": "Illustrative lower-authority training variant without an airbrake; not measured aircraft data. Existing mission defaults may be infeasible.",
+  "calibration_status": "illustrative",
+  "limits": {
+    "min_airspeed_m_s": 9,
+    "max_airspeed_m_s": 15,
+    "max_bank_deg": 35,
+    "max_roll_rate_deg_s": 30,
+    "stall_speed_1g_m_s": 6,
+    "stall_margin": 1.2,
+    "min_load_factor": 0.2,
+    "max_load_factor": 2,
+    "max_flight_path_deg": 35,
+    "max_flight_path_rate_deg_s": 6,
+    "max_climb_rate_m_s": 2,
+    "max_descent_rate_m_s": 4,
+    "max_vertical_acceleration_m_s2": 0.8
+  },
+  "actuators": {
+    "max_thrust_acceleration_m_s2": 4,
+    "max_airbrake_acceleration_m_s2": 0
+  },
+  "drag": {
+    "parasitic_coefficient_per_m": 0.003,
+    "induced_coefficient_m3_per_s4": 20
+  }
+}

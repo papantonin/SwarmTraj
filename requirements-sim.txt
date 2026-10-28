@@ -1,0 +1,10 @@
+# Runtime requirements imported by the pinned gym-pybullet-drones snapshot.
+# The upstream package itself is installed without dependencies by setup.sh so
+# that optional RL packages (PyTorch, Stable-Baselines3) are not downloaded.
+gymnasium>=1.0,<2
+numpy>=1.24,<3
+pillow>=10,<13
+pybullet==3.2.7
+scipy>=1.11,<2
+transforms3d>=0.4,<1
+matplotlib>=3.8,<4

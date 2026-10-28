@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarm-sim"
+version = "0.1.0"
+description = "A small multi-drone simulation API built on gym-pybullet-drones"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+trajectory2d = ["scipy>=1.11,<2", "matplotlib>=3.8,<4"]
+px4-sitl = ["mavsdk==4.1.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

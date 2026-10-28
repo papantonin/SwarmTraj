@@ -1,0 +1,31 @@
+{
+  "schema": "swarm-aircraft-profile-v1",
+  "model": "coordinated_point_mass_v1",
+  "unit_system": "SI",
+  "name": "fixed_wing_reference",
+  "description": "Historical illustrative point-mass parameters; not a calibrated aircraft.",
+  "calibration_status": "illustrative",
+  "limits": {
+    "min_airspeed_m_s": 8,
+    "max_airspeed_m_s": 16,
+    "max_bank_deg": 50,
+    "max_roll_rate_deg_s": 60,
+    "stall_speed_1g_m_s": 6,
+    "stall_margin": 1.15,
+    "min_load_factor": 0.2,
+    "max_load_factor": 2.5,
+    "max_flight_path_deg": 45,
+    "max_flight_path_rate_deg_s": 8,
+    "max_climb_rate_m_s": 3,
+    "max_descent_rate_m_s": 10,
+    "max_vertical_acceleration_m_s2": 1
+  },
+  "actuators": {
+    "max_thrust_acceleration_m_s2": 5,
+    "max_airbrake_acceleration_m_s2": 5
+  },
+  "drag": {
+    "parasitic_coefficient_per_m": 0.003,
+    "induced_coefficient_m3_per_s4": 20
+  }
+}

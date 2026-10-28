@@ -1,0 +1,32 @@
+{
+  "schema": "swarm-aircraft-profile-v2",
+  "model": "coordinated_point_mass_v1",
+  "unit_system": "SI",
+  "name": "rascal110_empty_approx",
+  "description": "Reduced approximation inspired by ThunderFly FlightGear-Rascal Rascal110-JSBSim.xml at add3958a81a7e9676f83859b8bf564377ecbbe03: 13 lb, 10.57 ft2, CD0=0.028, k=0.04, CLmax=1.4. Assumed rho=1.225 kg/m3. Thrust, maneuver limits and 2.5 m enclosing radius are unmeasured simulation assumptions. No airbrake; not a JSBSim import or calibrated Rascal. See docs/aircraft_profiles.md.",
+  "calibration_status": "illustrative",
+  "geometry": {"bounding_radius_m": 2.5},
+  "limits": {
+    "min_airspeed_m_s": 10,
+    "max_airspeed_m_s": 20,
+    "max_bank_deg": 30,
+    "max_roll_rate_deg_s": 30,
+    "stall_speed_1g_m_s": 8.288377621096137,
+    "stall_margin": 1.15,
+    "min_load_factor": 0.2,
+    "max_load_factor": 2,
+    "max_flight_path_deg": 25,
+    "max_flight_path_rate_deg_s": 6,
+    "max_climb_rate_m_s": 2,
+    "max_descent_rate_m_s": 3,
+    "max_vertical_acceleration_m_s2": 0.8
+  },
+  "actuators": {
+    "max_thrust_acceleration_m_s2": 3,
+    "max_airbrake_acceleration_m_s2": 0
+  },
+  "drag": {
+    "parasitic_coefficient_per_m": 0.0028560114494803417,
+    "induced_coefficient_m3_per_s4": 37.739495764140464
+  }
+}

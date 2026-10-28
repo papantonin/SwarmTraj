@@ -1,0 +1,49 @@
+# Documentation index
+
+The coordinated trajectory engine uses custom point-mass dynamics. The
+optional PX4/Gazebo experiments are separate execution backends; their spatial
+missions do not inherit the planner's timing or separation claims.
+
+## Start here
+
+- [Project installation and examples](../README.md)
+- [Coordinated 3D trajectories and scenario preparation](trajectory_3d.md)
+- [Planar and historical trajectory modes](trajectory_2d.md)
+- [Script catalog](../scripts/README.md)
+
+## Physics, aircraft and tracking
+
+- [Coupled 3D equations and assumptions](flight_model_3d.md)
+- [Aircraft profile schemas and identity](aircraft_profiles.md)
+- [Per-aircraft profiles, enclosing geometry and margins](heterogeneous_aircraft.md)
+- [Disturbed execution and own-state tracking](robust_tracking.md)
+- [Static obstacles and full-horizon clearance](obstacles.md)
+
+## Planning and mission constraints
+
+- [Adaptive candidate catalogs and joint search](adaptive_planning.md)
+- [Margin-preferring selection](margin_selection.md)
+- [Conflict witnesses and proposal guidance](conflict_guidance.md)
+- [Arrival deadlines, recovery and horizon](mission_timing.md)
+- [Contact events, preparation and reservations](mission_pipeline.md)
+- [Free departure windows and richer profiles](free_windows_profiles.md)
+- [Explicit mixed-profile policy](mixed_profiles.md)
+- [Intermediate-cell passage guidance](intermediate_passages.md)
+
+## Measurements and validation
+
+- [Planning performance and reference comparisons](planning_performance.md)
+- [Parameter and disturbance campaigns](parameter_campaign.md)
+- [One-to-five-aircraft scaling campaign and artifact reports](scaling_campaign.md)
+- [Isolated vertical-flight verification](vertical_flight_validation.md)
+- [Flight-envelope validation](flight_envelope_validation.md)
+
+Generated reports and raw runs belong under ignored `results/`. The local
+`results/README.md` inventory groups them without changing the original mission
+records or treating saved reports as independent trajectory revalidation.
+
+## PX4/Gazebo experiments
+
+- [Single-aircraft backend, setup and limitations](px4_gazebo.md)
+- [Shared scenario editor and single-aircraft execution](gazebo_editor.md)
+- [Four-aircraft shared world, camera and observer](gazebo_fleet.md)

@@ -1,0 +1,12 @@
+[
+  {
+    "kind": "cylinder",
+    "center": [200, 120, 75],
+    "half_extents": [100, 100, 75]
+  },
+  {
+    "kind": "box",
+    "center": [320, 190, 65],
+    "half_extents": [60, 60, 65]
+  }
+]

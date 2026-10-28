@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset><created>2026-10-27T00:00:00Z</created><modified>2026-10-27T00:00:00Z</modified><unit name="meter" meter="1"/><up_axis>Z_UP</up_axis></asset>
+  <!-- Two triangles at Z=0; same 6 km ground footprint, with one 40 m texture
+       repeat per UV unit. This is visual geometry only, not a height field. -->
+  <library_geometries>
+    <geometry id="ground" name="ground">
+      <mesh>
+        <source id="ground_positions">
+          <float_array id="ground_positions_array" count="12">-3000 -3000 0 3000 -3000 0 3000 3000 0 -3000 3000 0</float_array>
+          <technique_common><accessor source="#ground_positions_array" count="4" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common>
+        </source>
+        <source id="ground_normals">
+          <float_array id="ground_normals_array" count="3">0 0 1</float_array>
+          <technique_common><accessor source="#ground_normals_array" count="1" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common>
+        </source>
+        <source id="ground_uv">
+          <float_array id="ground_uv_array" count="8">0 0 150 0 150 150 0 150</float_array>
+          <technique_common><accessor source="#ground_uv_array" count="4" stride="2"><param name="S" type="float"/><param name="T" type="float"/></accessor></technique_common>
+        </source>
+        <vertices id="ground_vertices"><input semantic="POSITION" source="#ground_positions"/></vertices>
+        <triangles count="2">
+          <input semantic="VERTEX" source="#ground_vertices" offset="0"/>
+          <input semantic="NORMAL" source="#ground_normals" offset="1"/>
+          <input semantic="TEXCOORD" source="#ground_uv" offset="2" set="0"/>
+          <p>0 0 0 1 0 1 2 0 2 0 0 0 2 0 2 3 0 3</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes><visual_scene id="scene"><node id="ground_node"><instance_geometry url="#ground"/></node></visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#scene"/></scene>
+</COLLADA>
