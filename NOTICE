@@ -1,0 +1,15 @@
+SwarmTraj
+Copyright 2026 SwarmTraj contributors.
+
+This project's original code and documentation are licensed under the
+Apache License, Version 2.0, unless otherwise noted.
+
+Third-party attribution
+-----------------------
+The adapted PX4 Gazebo fixtures under examples/gazebo/ use material from
+PX4 Gazebo Models, Copyright (c) 2022, PX4 Autopilot for Drones, licensed
+under BSD 3-Clause. Their original terms and attribution are retained in
+examples/gazebo/LICENSE.PX4 and examples/gazebo/NOTICE.md.
+
+Installed dependencies and the optional PX4/Gazebo container retain their
+respective licenses; they are not relicensed by this project.

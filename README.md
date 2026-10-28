@@ -1,10 +1,15 @@
-# Drone swarm simulation environment
+# SwarmTraj
 
-This project provides a small Python API for developing multi-drone algorithms
-without exposing physics-engine details. The selected backend is
-[gym-pybullet-drones](https://github.com/learnsyslab/gym-pybullet-drones), built
-on PyBullet and Gymnasium. It simulates Crazyflie 2.x quadrotors with 6-DoF
-dynamics; ground effect, drag and downwash models are available in the backend.
+Coordinated fixed-wing trajectory planning and simulation.
+
+SwarmTraj generates coordinated fixed-wing trajectories using a
+custom NumPy/SciPy point-mass model, selects compatible plans centrally, then
+simulates independent local tracking. Matplotlib provides scenario editing and
+playback. This engine does not require Docker, PX4, Gazebo or ROS 2.
+
+Separate optional examples use PyBullet for quadrotors and a simpler fixed-wing
+ring simulator. An isolated PX4/Gazebo experiment flies derived spatial references;
+it does not inherit the planner's timing or separation guarantees.
 
 ## Repository navigation
 
@@ -17,40 +22,36 @@ dynamics; ground effect, drag and downwash models are available in the backend.
 | `tests/` | Regression tests; run with `./scripts/test.sh` |
 | `results/` | Ignored local artifacts, including failed trials and original evidence |
 
-For existing local outputs, open `results/README.md`. Regenerate its grouped
+Generated results are not distributed with a fresh clone. For existing local
+outputs, open `results/README.md`. Regenerate its grouped
 inventory with `.venv/bin/python scripts/index_results.py`. Downloadable
 archives are grouped under `results/exports/`; earlier published archive paths
 remain available as compatibility links. Historical run directories retain
 their original paths and contents.
 
-## Why this backend?
-
-| Solution | Interfaces | Strengths | Limitations / best use |
-|---|---|---|---|
-| **gym-pybullet-drones + PyBullet** | Python | Relatively lightweight installation, multi-agent support, Gymnasium/RL, direct access to the full state, accelerated headless simulation | More limited sensor/rendering fidelity; well suited to algorithm development |
-| **PX4 SITL + Gazebo** | C++, ROS 2, MAVSDK Python/C++ | Actual PX4 autopilot, sensors/noise, cameras, 3D worlds, multiple vehicles | Heavier installation and computation; well suited to validation before hardware deployment |
-| **Webots** | C, C++, Python, ROS 2 | Cross-platform, 3D editor, separate controller per robot, Supervisor API | Flight models and autopilot integration need to be configured for the aircraft |
-| **AirSim / Project AirSim** | Python, C++, RPC | High-quality Unreal rendering, cameras, multiple vehicles | The original AirSim is no longer actively developed; migration needs evaluation |
-
-The repository isolates the quadrotor backend behind `SwarmSimulator`. A future
-Gazebo/PX4 integration could therefore provide the same `SwarmState` without
-changing the algorithms. The coordinated fixed-wing trajectory prototype
-described below uses its own flight model rather than this PyBullet backend.
-
 ## Installation
 
-Requirements: Linux, Python 3.12 and a C/C++ compiler (`build-essential` on
-Ubuntu). With Python 3.11+, PyBullet may be compiled during installation.
+Start with **Ubuntu 24.04 x86-64 and Python 3.12**:
 
 ```bash
-chmod +x scripts/setup.sh
-./scripts/setup.sh
-source .venv/bin/activate
+sudo apt-get update
+sudo apt-get install -y git python3.12 python3.12-venv python3-tk
+git clone https://github.com/papantonin/SwarmTraj.git
+cd SwarmTraj
+bash scripts/setup.sh --trajectory
+.venv/bin/python scripts/doctor.py
+.venv/bin/python examples/trajectory_3d.py --no-gui --workers 1
 ```
 
-The setup script pins a specific `gym-pybullet-drones` commit and does not
-install its large optional reinforcement-learning dependencies (PyTorch and
-Stable-Baselines3). These can be installed separately if RL is needed later.
+Read the [new-machine installation guide](docs/installation.md) for obtaining
+the source, optional PyBullet build prerequisites, Docker/PX4 setup, GUI/GPU
+requirements, verification commands and troubleshooting. `bash scripts/setup.sh`
+(or `--full`) installs all Python backends; `--trajectory` installs the planner
+without PyBullet. The full setup pins gym-pybullet-drones and omits its large
+optional reinforcement-learning packages. PX4 setup is a separate explicit step.
+
+The Python distribution is named `swarmtraj`; the import package remains
+`swarm_sim`, as used in the examples below.
 
 ## Running the examples
 
@@ -306,6 +307,9 @@ demonstrates this loop.
 
 ## Tests
 
+The full suite requires the full Python installation (`bash scripts/setup.sh --full`).
+Trajectory-only checks are listed in the [installation guide](docs/installation.md).
+
 ```bash
 ./scripts/test.sh
 ```
@@ -320,12 +324,23 @@ python examples/formation.py --duration 1 --no-gui
 head results/telemetry.csv
 ```
 
-## Path toward higher fidelity
+## Development scope
 
-1. Quickly develop and test formation, consensus, avoidance and allocation
-   algorithms in this PyBullet environment.
-2. Add noise, communication delays and packet loss to the observation/control
-   interface.
-3. Implement a PX4 SITL + Gazebo backend exposing the same `SwarmState`, then
-   test actual autopilot constraints through ROS 2 or MAVSDK.
-4. Deploy the offboard algorithm on physical drones without changing its core.
+The coupled point-mass planner and the optional PX4/Gazebo experiments have
+separate models and validation scopes. See the [flight model](docs/flight_model_3d.md)
+and [PX4/Gazebo guide](docs/px4_gazebo.md) for their assumptions and limitations.
+Real-aircraft deployment requires separate interfaces, calibration and validation;
+this repository does not provide a real-hardware flight interface or certification.
+
+## License
+
+Copyright 2026 SwarmTraj contributors.
+
+Unless otherwise noted, this project's original code and documentation are
+licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution information.
+
+Third-party components retain their own licenses. In particular, the adapted
+PX4 Gazebo fixtures retain their [BSD 3-Clause license](examples/gazebo/LICENSE.PX4)
+and [upstream attribution](examples/gazebo/NOTICE.md). The project license does
+not replace the licenses of installed dependencies or container contents.

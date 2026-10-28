@@ -1,4 +1,4 @@
-# Script catalog
+# SwarmTraj script catalog
 
 Run Python scripts from the repository root with the existing `.venv`.
 Script locations remain unchanged because launchers, tests and saved campaign
@@ -8,8 +8,9 @@ fingerprints reference them. Use `--help` for each Python command's options.
 
 | Script | Purpose |
 |---|---|
-| [setup.sh](setup.sh) | Initial environment setup with the pinned simulation dependency |
+| [setup.sh](setup.sh) | Trajectory-only or full Python environment setup |
 | [setup_px4_sitl.sh](setup_px4_sitl.sh) | Optional isolated PX4/Gazebo fixture setup |
+| [doctor.py](doctor.py) | Check Python dependencies and optional container compatibility without a flight |
 | [test.sh](test.sh) | Pytest runner isolated from external ROS plugins |
 
 ## Planning and execution comparisons

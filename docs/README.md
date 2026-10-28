@@ -1,4 +1,4 @@
-# Documentation index
+# SwarmTraj documentation
 
 The coordinated trajectory engine uses custom point-mass dynamics. The
 optional PX4/Gazebo experiments are separate execution backends; their spatial
@@ -6,7 +6,8 @@ missions do not inherit the planner's timing or separation claims.
 
 ## Start here
 
-- [Project installation and examples](../README.md)
+- [New-machine installation and troubleshooting](installation.md)
+- [Project overview and examples](../README.md)
 - [Coordinated 3D trajectories and scenario preparation](trajectory_3d.md)
 - [Planar and historical trajectory modes](trajectory_2d.md)
 - [Script catalog](../scripts/README.md)

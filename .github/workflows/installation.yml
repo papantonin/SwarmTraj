@@ -1,0 +1,40 @@
+name: Installation and tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  clean-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [trajectory, full]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install host prerequisites (system CPython 3.12)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3.12 python3.12-venv python3-tk build-essential python3.12-dev libgl1 libegl1 libglib2.0-0
+      - name: Install from scratch
+        run: PYTHON=python3.12 bash scripts/setup.sh --${{ matrix.mode }}
+      - name: Core trajectory regression tests
+        run: ./scripts/test.sh tests/test_flight3d.py tests/test_trajectory3d.py
+      - name: Headless trajectory example
+        env:
+          MPLBACKEND: Agg
+        run: .venv/bin/python examples/trajectory_3d.py --no-gui --workers 1
+      - name: Full test suite and PyBullet examples
+        if: matrix.mode == 'full'
+        env:
+          MPLBACKEND: Agg
+        run: |
+          ./scripts/test.sh
+          .venv/bin/python examples/formation.py --duration 1 --no-gui
+          .venv/bin/python examples/fixed_wing_ring.py --duration 1 --no-gui
+      - name: Preserve failed-install diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installation-${{ matrix.mode }}-results
+          path: results/
