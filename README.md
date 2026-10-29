@@ -13,6 +13,7 @@ dynamics; ground effect, drag and downwash models are available in the backend.
 | [Documentation index](docs/README.md) | Usage, models, planning, validation and PX4/Gazebo guides |
 | [Script index](scripts/README.md) | Setup, benchmarks, campaigns, reports and visualizations |
 | `src/swarm_sim/` | Library code; coordinated trajectory planning is in `trajectory2d/` |
+| `native/` | Optional standalone C++20 physical construction kernel and Python binding |
 | `examples/` | Launchers, reusable scenarios, aircraft profiles and Gazebo fixtures |
 | `tests/` | Regression tests; run with `./scripts/test.sh` |
 | `results/` | Ignored local artifacts, including failed trials and original evidence |
@@ -51,6 +52,12 @@ source .venv/bin/activate
 The setup script pins a specific `gym-pybullet-drones` commit and does not
 install its large optional reinforcement-learning dependencies (PyTorch and
 Stable-Baselines3). These can be installed separately if RL is needed later.
+
+The physical trajectory generator also has an optional C++20 backend. Build it
+with `./scripts/build_native.sh`, then select
+`--generator-mode physical_mission --numerical-backend cpp --workers 1` in the
+trajectory CLI. Python remains the default and independently validates native
+candidates. See [build instructions and measured results](docs/native_kernel.md).
 
 ## Running the examples
 

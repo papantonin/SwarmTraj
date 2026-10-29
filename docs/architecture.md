@@ -13,6 +13,7 @@ flowchart TD
     Mode{"Generator choice: coupled 3D"}
     Geom["geometric: routing/vertical proposals, then coupled physical rollout"]
     Physical["physical_mission: integrated loiter, levels, transit, approach, passage, pull-out, recovery"]
+    Backend{"Offline physical construction: Python default or explicit C++20"}
     Individual{"Independent individual validation: forces/envelope, contact, obstacles, full horizon"}
     Catalog["Deterministic per-aircraft catalogs; serial or spawn processes"]
     Joint["Bounded joint search; full-horizon distance and optional reservations"]
@@ -33,7 +34,7 @@ flowchart TD
     Artifacts["Reports, fingerprints, telemetry and measured limitations"]
     Editor --> JSON --> Input --> Mode
     Mode --> Geom --> Individual
-    Mode --> Physical --> Individual
+    Mode --> Physical --> Backend --> Individual
     Individual -->|accepted| Catalog --> Joint --> Expand
     Individual -->|rejected; attempts remain| Mode
     Individual -->|exhausted| Fail
@@ -59,8 +60,15 @@ receive their own plan, observed state and clock, without peer telemetry or true
 disturbance state. Observer outputs do not become live avoidance commands.
 Multiple process counts preserve seeded streams, order and acceptance rules.
 
+The optional [C++20 kernel](native_kernel.md) runs complete physical construction
+loops with resolved own-aircraft parameters and immutable output buffers.
+Proposal RNG, independent validation, joint search and execution remain in
+Python. Its backend identity is included in native mission fingerprints. Shared
+PX4 editor scenarios currently use Python. The existing generated local PDF
+predates this optional numerical branch; regenerate it before using it as an
+up-to-date architecture illustration.
+
 See [generator migration](generator_migration.md),
 [point-mass assumptions](flight_model_3d.md),
 [single-aircraft editor](gazebo_editor.md) and [native fleet](gazebo_fleet.md).
-The generated local PDF at `results/architecture-diagram/architecture.pdf`
-illustrates the same branches; this tracked document is its reviewable source.
+This tracked document is the reviewable architecture source.

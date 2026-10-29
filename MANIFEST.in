@@ -1,0 +1,2 @@
+recursive-include native *.hpp *.cpp CMakeLists.txt
+include scripts/build_native.sh

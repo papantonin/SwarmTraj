@@ -113,6 +113,9 @@ def _settled(state, altitude):
 @_scalar_proposal_cache
 def _terminal_distance(speed, cruise, config):
     """Measure the approach length by physical rollout, never by a Z trapezoid."""
+    if config.numerical_backend == 'cpp':
+        from .native_backend import fixture
+        return fixture(speed, config, cruise)
     target_z = cruise if config.target_altitude is None else config.target_altitude
     angle = -np.deg2rad(config.descent_angle_deg)
     state = np.array([0., 0., cruise, speed, 0., 0., 0.])
@@ -152,6 +155,9 @@ def _terminal_distance(speed, cruise, config):
 @_scalar_proposal_cache
 def _approach_headroom(speed, config):
     """Proposal-only pitch-down loss from a fixed physical boundary fixture."""
+    if config.numerical_backend == 'cpp':
+        from .native_backend import fixture
+        return fixture(speed, config)
     state = np.array([0., 0., config.max_altitude, speed, 0., 0., 0.])
     entry = _pitch(state, speed, -np.deg2rad(config.descent_angle_deg),
                    config, round(config.horizon / config.dt))
@@ -307,6 +313,24 @@ def physical_candidate(snapshot, config, candidate_id, rng, approach_angle=None,
                 routing_mode = 'overflight' if candidate_id % 3 == 1 else 'underflight'
         waypoints = avoidance_waypoints(np.asarray(snapshot.state[:2]), waypoints, routing,
                                         snapshot.speed, candidate_id)
+    if config.numerical_backend == 'cpp':
+        from .native_backend import construct
+        result = construct(snapshot, config, cruise=cruise, release=release, levels=levels,
+            minimum_hold=config.cruise_level_hold if level_hold_override is None else level_hold_override,
+            speed_reference=speed_reference, speed_derivative=speed_derivative, speed_end=speed_end,
+            heading=heading, gate=gate, direction=direction, normal=normal, waypoints=waypoints,
+            candidate_id=candidate_id, diagnostics=diagnostics)
+        if result is None:
+            return None
+        full, controls, phases, arrival = result
+        projected = project(full, np.vstack((controls, controls[-1])), config.flight)
+        return Trajectory(snapshot.drone_id, candidate_id, snapshot.speed, config.dt,
+            projected[:, :4], np.diff(projected[:, 3])/config.dt, arrival, release,
+            approach_angle, projected[:, 4:], np.diff(projected[:, 5])/config.dt, cruise,
+            full, controls, config.flight, config.limits.max_speed, routing_mode=routing_mode,
+            cruise_levels_m=levels if len(levels)>1 else (),
+            speed_reference=speed_reference if config.speed_profile != 'constant' else None,
+            generation_phases=phases)
     states, commands, phases = [from_snapshot(snapshot)], [], []
 
     def append(command):

@@ -49,8 +49,20 @@ def write_json(path, value):
 
 def sources():
     files = [Path(__file__).resolve(), ROOT / 'scripts/benchmark_planning.py',
-             *sorted((ROOT / 'src/swarm_sim/trajectory2d').glob('*.py'))]
+             *sorted((ROOT / 'src/swarm_sim/trajectory2d').glob('*.py')),
+             *sorted((ROOT / 'native').rglob('*.cpp')), *sorted((ROOT / 'native').rglob('*.hpp')),
+             ROOT / 'native/CMakeLists.txt', ROOT / 'setup.py', ROOT / 'scripts/build_native.sh']
     return {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+
+
+def check_sources(manifest):
+    if sources() != manifest['source_sha256']:
+        raise RuntimeError('campaign source changed; create a separate campaign')
+    expected = manifest.get('native_backend_identity')
+    if expected is not None:
+        from swarm_sim.trajectory2d.native_backend import identity
+        if identity() != expected:
+            raise RuntimeError('native backend binary/build identity changed')
 
 
 def base_case(n, seed):
@@ -181,14 +193,18 @@ def decode(job):
     return snapshots, Config(**fields)
 
 
-def replay_jobs(reference, suites, generator_mode):
-    """Copy saved inputs exactly; only the explicitly requested mode may change."""
+def replay_jobs(reference, suites, generator_mode, numerical_backend=None):
+    """Copy saved inputs, applying only explicit generator/backend overrides."""
     jobs = copy.deepcopy([j for j in reference['jobs'] if j['suite'] in suites])
     if not jobs or len({j['id'] for j in jobs}) != len(jobs):
         raise ValueError('reference must contain a nonempty unique job selection')
-    if generator_mode is not None:
-        for job in jobs:
+    for job in jobs:
+        # This additive field was absent in the historical pure Python schema.
+        job['config'].setdefault('numerical_backend', 'python')
+        if generator_mode is not None:
             job['config']['generator_mode'] = generator_mode
+        if numerical_backend is not None:
+            job['config']['numerical_backend'] = numerical_backend
     return jobs
 
 
@@ -246,8 +262,7 @@ def record_configuration_rejection(directory, job, error):
 def worker(directory, job_id):
     manifest = json.loads((directory / 'manifest.json').read_text())
     job = next(j for j in manifest['jobs'] if j['id'] == job_id)
-    if sources() != manifest['source_sha256']:
-        raise RuntimeError('source changed before worker start')
+    check_sources(manifest)
     try:
         snapshots, config = decode(job)
     except ValueError as error:
@@ -309,8 +324,7 @@ def worker(directory, job_id):
             temp = directory / 'checkpoints' / f'{job_id}.tmp'
             temp.write_text(json.dumps(record, allow_nan=False))
             temp.replace(directory / 'checkpoints' / f'{job_id}.json')
-    if sources() != manifest['source_sha256']:
-        raise RuntimeError('source changed during worker execution')
+    check_sources(manifest)
     write_json(directory / 'completed' / f'{job_id}.json', record)
 
 
@@ -322,8 +336,7 @@ def run(directory, manifest):
     for index, job in enumerate(manifest['jobs'], 1):
         if job['id'] in done:
             continue
-        if sources() != manifest['source_sha256']:
-            raise RuntimeError('campaign source changed; create a separate campaign')
+        check_sources(manifest)
         job_id = job['id']
         # A resumed, interrupted job may have partial own files. Preserve them
         # in a numbered attempt directory before trying it again.
@@ -376,8 +389,7 @@ def run(directory, manifest):
             os.fsync(stream.fileno())
         print(json.dumps({'id': job_id, 'status': record['status'], 'completion': record['completion'],
             'seconds': round(elapsed, 3), 'attempted': record.get('attempted')}), flush=True)
-        if sources() != manifest['source_sha256']:
-            raise RuntimeError('source changed during campaign')
+        check_sources(manifest)
         if 'worker_error' in record['completion']:
             raise RuntimeError(f'worker failed: inspect {directory / "logs" / (job_id+".log")}')
     rows = [json.loads(line) for line in journal.read_text().splitlines()]
@@ -402,6 +414,8 @@ def main(argv=None):
     parser.add_argument('--reference', type=Path, help='Replay saved manifest inputs instead of regenerating scenes')
     parser.add_argument('--generator-mode', choices=('geometric', 'physical_mission', 'physical_recovery_seed'),
                         help='Explicit generator override; all other saved mission inputs stay unchanged')
+    parser.add_argument('--numerical-backend', choices=('python', 'cpp'),
+                        help='Explicit numerical backend override; cpp requires physical coupled 3D construction')
     parser.add_argument('--planning-workers', type=int,
                         help='Explicit catalog process override, except saved serial/spawn replay pairs')
     parser.add_argument('--execution-families', nargs='+', choices=FAMILIES,
@@ -428,8 +442,7 @@ def main(argv=None):
             parser.error(f'duplicate {name} are not allowed')
     if args.resume:
         manifest = json.loads((directory / 'manifest.json').read_text())
-        if manifest['source_sha256'] != sources():
-            parser.error('source differs from saved campaign')
+        check_sources(manifest)
     else:
         if directory.exists():
             parser.error('output directory must be new (or use --resume)')
@@ -444,12 +457,15 @@ def main(argv=None):
         reference = None
         if args.reference:
             reference = json.loads(args.reference.read_text())
-            jobs = replay_jobs(reference, args.suites, args.generator_mode)
+            jobs = replay_jobs(reference, args.suites, args.generator_mode, args.numerical_backend)
             args.counts, args.seeds = reference['counts'], reference['seeds']
             args.timeout = reference['timeout_s']
         elif args.generator_mode is not None:
             for job in jobs:
                 job['config']['generator_mode'] = args.generator_mode
+        if args.numerical_backend is not None:
+            for job in jobs:
+                job['config']['numerical_backend'] = args.numerical_backend
         try:
             jobs = select_jobs(jobs, args.jobs, args.planning_workers)
         except ValueError as error:
@@ -471,9 +487,13 @@ def main(argv=None):
             manifest['reference'] = {'path': str(args.reference.resolve()),
                 'sha256': hashlib.sha256(args.reference.read_bytes()).hexdigest(),
                 'generator_mode_override': args.generator_mode,
+                'numerical_backend_override': args.numerical_backend,
                 'planning_workers_override': args.planning_workers,
                 'job_ids': args.jobs,
-                'scope': 'same saved snapshots, mission constraints and timeout; explicit generator/process overrides only'}
+                'scope': 'same saved snapshots, mission constraints and timeout; explicit generator/backend/process overrides only'}
+        if any(job['config'].get('numerical_backend', 'python') == 'cpp' for job in jobs):
+            from swarm_sim.trajectory2d.native_backend import identity
+            manifest['native_backend_identity'] = identity()
         write_json(directory / 'manifest.json', manifest)
     return run(directory, manifest)
 

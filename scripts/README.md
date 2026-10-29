@@ -11,6 +11,7 @@ fingerprints reference them. Use `--help` for each Python command's options.
 | [setup.sh](setup.sh) | Initial environment setup with the pinned simulation dependency |
 | [setup_px4_sitl.sh](setup_px4_sitl.sh) | Optional isolated PX4/Gazebo fixture setup |
 | [test.sh](test.sh) | Pytest runner isolated from external ROS plugins |
+| [build_native.sh](build_native.sh) | Build the optional C++20 extension and run standalone C++ tests |
 
 ## Planning and execution comparisons
 
@@ -23,6 +24,7 @@ fingerprints reference them. Use `--help` for each Python command's options.
 | [benchmark_intervals_profiles.py](benchmark_intervals_profiles.py) | Departure windows, rich/mixed profiles and passages |
 | [benchmark_tracking.py](benchmark_tracking.py) | Identical-plan disturbance and rejection trials |
 | [benchmark_physical_missions.py](benchmark_physical_missions.py) | Paired historical/direct-physical individual missions, with optional execution checks |
+| [benchmark_native.py](benchmark_native.py) | Paired Python/C++ construction on saved inputs, process counts, signatures, numerical deltas and RSS |
 
 ## Campaigns, audits and reports
 
@@ -72,6 +74,13 @@ and the same `--execution-families baseline obstacles heterogeneous rich_strict 
 for each generator. Dedicated serial/spawn replay pairs keep their saved counts.
 `--jobs ID ...` records a diagnostic subset without qualifying default promotion.
 See the [migration procedure](../docs/generator_migration.md).
+
+Add `--numerical-backend cpp` to a physical campaign after
+`./scripts/build_native.sh` to compare the optional C++ kernel on the same saved
+inputs. The manifest freezes native sources and binary identity as well as the
+explicit override. The report retains Python physical revalidation and labels
+native recovery differences using the declared float64 comparison tolerances.
+See [native build, tests and measurements](../docs/native_kernel.md).
 
 The [completed saved-input comparison](../docs/phase2_kinodynamic.md#completed-saved-input-comparison)
 records 192/230 physical planning successes against 180/230 historically,

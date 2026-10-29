@@ -103,6 +103,23 @@ a simulator coordinator assumption, not a solution to distributed agreement
 with unbounded packet loss. Rejecting activation is not a certified indefinite
 holding or emergency policy beyond the checked horizon.
 
+Faster [native physical construction](native_kernel.md) reduces measured
+planning latency and can therefore change this fixed-activation readiness
+decision. It does not move activation earlier, refresh the snapshot or shorten
+the prediction horizon to an unchanged activation time. An explicitly supplied
+`--planning-latency` also stays unchanged when switching numerical backends.
+Earlier activation requires selecting a new activation time before planning and
+revalidating the entire mission.
+
+For example, with three aircraft and the default transfer/guard settings, the
+readiness inequality is `activation_time >= planning_duration + 1.5 s`.
+The repeated headless reference measurements (7.626 s Python / 0.199 s C++)
+give arithmetic readiness thresholds of 9.126 s / 1.699 s. For the measured
+plans' fixed 3 s activation, the C++ duration passes the simulated readiness
+gate and the Python duration does not. These are modeled transfers using
+observed planning durations, not guaranteed live network or real-time results;
+the thresholds do not certify a different, uncomputed activation schedule.
+
 ## 3. Explicit full-horizon space/time reservations
 
 Enable `--reservation-policy grid` (default `none` for compatibility).

@@ -40,6 +40,8 @@ def default_scenario(seed=7, obstacles=()):
 
 
 def validate_scenario(snapshots, config):
+    if config.numerical_backend != 'python':
+        raise ValueError('Shared PX4 scenarios currently require the Python numerical backend; C++ is an offline planner option.')
     if len(snapshots) != 1 or snapshots[0].drone_id != 0:
         raise ValueError('Gazebo editor currently supports exactly one drone (ID 0).')
     snapshot = snapshots[0]

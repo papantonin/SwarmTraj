@@ -7,7 +7,10 @@ interfaces and reports as the initial reference. PX4 startup reliability is a
 separate integration issue and need not block this numerical work.
 
 This audit changes no simulation behavior, parameters, budgets or safety checks.
-No C++ backend has been implemented or benchmarked. The Python baseline uses
+At the time of this audit, no C++ backend had been implemented or benchmarked.
+The subsequent Python stabilization checkpoint is `c930826`; the optional
+[native kernel](native_kernel.md) now implements the first boundary below.
+The Python baseline uses
 the geometric default and an explicitly selected physical builder.
 
 ## Current-source measurements
@@ -183,6 +186,7 @@ The user's Git index was not changed by the analysis. The subsequent Python
 checkpoint was explicitly requested separately; no C++ implementation is included.
 
 Keep generated profiling/telemetry/results, binaries, `.venv` and caches out of
-Git. Do not label the physical default promotion, complete 230-case refresh,
-reliable PX4 startup, verified native editor interaction or C++ speedup as done.
-See [current migration results and gates](generator_migration.md).
+Git. This audit alone establishes neither default promotion, a complete 230-case
+refresh, reliable PX4 startup, verified native editor interaction nor a C++
+speedup. See [current migration results and gates](generator_migration.md) and
+the subsequent [native implementation and measurements](native_kernel.md).

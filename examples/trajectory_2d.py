@@ -102,6 +102,8 @@ def main():
     parser.add_argument("--generator-mode", choices=("geometric", "physical_mission", "physical_recovery_seed"),
                         default="geometric", help="Historical geometry or experimental directly integrated physical mission; "
                         "physical_recovery_seed is a compatibility alias for physical_mission")
+    parser.add_argument('--numerical-backend', choices=('python', 'cpp'), default='python',
+                        help='construction kernel for the physical generator; independent validation stays Python')
     parser.add_argument("--initial-candidates", type=int, default=4,
                         help="Initial catalog size and expansion batch in adaptive mode")
     parser.add_argument("--search-order", choices=("mrv", "id"), default="mrv",
@@ -273,6 +275,7 @@ def main():
                         conflict_guidance=args.conflict_guidance,
                         candidate_guidance=args.candidate_guidance,
                         generator_mode=args.generator_mode,
+                        numerical_backend=args.numerical_backend,
                         reservation_policy=args.reservation_policy, reservation_cell_size=args.reservation_cell_size,
                         reservation_max_entries=args.reservation_max_entries,
                         interval_guidance=args.interval_guidance, interval_max_constraints=args.interval_max_constraints,

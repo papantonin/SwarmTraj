@@ -20,7 +20,7 @@ import time
 
 import numpy as np
 
-from benchmark_scaling_campaign import decode, sources
+from benchmark_scaling_campaign import check_sources, decode
 from diagnose_campaign_execution import load_plan
 from report_scaling_campaign import audit, report, summarize
 from swarm_sim.trajectory2d.kinodynamic_recovery import pullout_from_state, validate_pullout
@@ -53,7 +53,8 @@ def progress_html(manifest, rows):
 Unsupported configuration requests, if any, remain explicit rejections in the
 230-mission denominator. A parsed configuration is not a validated trajectory.</p>
 <p>Original snapshots, seeds, physical limits, margins, candidate/attempt budgets and
-{manifest['timeout_s']:g} s per-job cap are preserved. Only generator_mode changes.</p>
+{manifest['timeout_s']:g} s per-job cap are preserved. Explicit generator, numerical
+backend and process-count overrides are recorded in the manifest.</p>
 <p><a href="../manifest.json">Immutable inputs</a> · <a href="../journal.jsonl">Raw journal</a></p>
 <p>The final comparative HTML, PDF and CSV reports replace this page after completion.
 They include saved-plan numerical revalidation and default-promotion blockers.</p></html>'''
@@ -83,27 +84,39 @@ def wait_for_campaign(directory, manifest, campaign_pid):
         time.sleep(5)
 
 
-def input_differences(job, original, planning_workers=None, generator_mode=None):
-    """Allow mode and an explicitly recorded process count, never safety inputs."""
+def input_differences(job, original, planning_workers=None, generator_mode=None, numerical_backend=None):
+    """Allow recorded generator/backend/process overrides, never safety inputs."""
     errors = []
-    allowed = {'generator_mode'}
-    if generator_mode is not None and job['config'].get('generator_mode', 'geometric') != generator_mode:
-        errors.append('generator_mode differs from recorded override')
+    allowed = set()
+    if generator_mode is not None:
+        allowed.add('generator_mode')
+        if job['config'].get('generator_mode', 'geometric') != generator_mode:
+            errors.append('generator_mode differs from recorded override')
     if planning_workers is not None and job['suite'] != 'replay':
         allowed.add('planning_workers')
         if job['config'].get('planning_workers') != planning_workers:
             errors.append('planning_workers differs from recorded override')
+    if numerical_backend is not None:
+        allowed.add('numerical_backend')
+        if job['config'].get('numerical_backend', 'python') != numerical_backend:
+            errors.append('numerical_backend differs from recorded override')
     if {k: v for k, v in job.items() if k != 'config'} != {
             k: v for k, v in original.items() if k != 'config'}:
         errors.append('job fields or snapshots differ')
-    if {k: v for k, v in job['config'].items() if k not in allowed} != {
-            k: v for k, v in original['config'].items() if k not in allowed}:
-        errors.append('mission fields other than explicit generator/process overrides differ')
+    fields, previous = dict(job['config']), dict(original['config'])
+    # Historical records predate the optional backend; absence means Python.
+    fields.setdefault('numerical_backend', 'python')
+    previous.setdefault('numerical_backend', 'python')
+    fields.setdefault('generator_mode', 'geometric')
+    previous.setdefault('generator_mode', 'geometric')
+    if {k: v for k, v in fields.items() if k not in allowed} != {
+            k: v for k, v in previous.items() if k not in allowed}:
+        errors.append('mission fields other than explicit generator/backend/process overrides differ')
     return errors
 
 
 def revalidate(directory, jobs, rows):
-    checked = pairs = reservations = pullouts = corruptions = late_obstacles = 0
+    checked = pairs = reservations = pullouts = native_pullouts = corruptions = late_obstacles = 0
     errors = []
     for row in rows:
         if row['status'] != 'validated':
@@ -129,12 +142,19 @@ def revalidate(directory, jobs, rows):
                 if name != 'pullout':
                     continue
                 primitive = pullout_from_state(plan.flight_states[start], config.for_drone(plan.drone_id))
-                if (primitive is None or not validate_pullout(primitive, config.for_drone(plan.drone_id))
-                        or not np.array_equal(primitive.states, plan.flight_states[start:end + 1])
-                        or not np.array_equal(primitive.controls, plan.flight_controls[start:end])):
-                    errors.append(context + ': pullout connection differs')
-                else:
+                states, controls = plan.flight_states[start:end + 1], plan.flight_controls[start:end]
+                valid = primitive is not None and validate_pullout(primitive, config.for_drone(plan.drone_id))
+                exact = valid and np.array_equal(primitive.states, states) and np.array_equal(primitive.controls, controls)
+                equivalent_native = (valid and config.numerical_backend == 'cpp'
+                    and primitive.states.shape == states.shape and primitive.controls.shape == controls.shape
+                    and np.allclose(primitive.states, states, rtol=0, atol=1e-9)
+                    and np.allclose(primitive.controls, controls, rtol=0, atol=1e-10))
+                if exact:
                     pullouts += 1
+                elif equivalent_native:
+                    native_pullouts += 1
+                else:
+                    errors.append(context + ': pullout connection differs')
             controls = plan.flight_controls.copy()
             controls[-1, 2] = 100.
             if validate_individual(replace(plan, flight_controls=controls), by_id[plan.drone_id], config):
@@ -160,6 +180,8 @@ def revalidate(directory, jobs, rows):
     return {'scope': 'saved-plan numerical revalidation; no catalog generation or joint search',
         'individual_plans': checked, 'full_horizon_pairs': pairs,
         'reservation_pairs': reservations, 'exact_pullout_connections': pullouts,
+        'native_pullout_connections_within_tolerance': native_pullouts,
+        'native_pullout_comparison_atol': {'states': 1e-9, 'controls': 1e-10, 'rtol': 0},
         'corrupt_final_commands_rejected': corruptions,
         'post_arrival_obstacles_rejected': late_obstacles, 'errors': errors}
 
@@ -217,14 +239,14 @@ def main():
     old_jobs = {j['id']: j for j in original['jobs']}
     integrity = audit(directory, manifest, rows)
     errors = list(integrity['errors'])
-    if sources() != manifest['source_sha256']:
-        raise RuntimeError('current planner/worker sources differ from campaign')
+    check_sources(manifest)
     if hashlib.sha256(reference_path.read_bytes()).hexdigest() != manifest['reference']['sha256']:
         raise RuntimeError('reference manifest changed')
     for job in jobs.values():
         errors.extend(f'{job["id"]}: {error}' for error in input_differences(
             job, old_jobs[job['id']], manifest['reference'].get('planning_workers_override'),
-            manifest['reference'].get('generator_mode_override')))
+            manifest['reference'].get('generator_mode_override'),
+            manifest['reference'].get('numerical_backend_override')))
     if manifest['timeout_s'] != original['timeout_s']:
         errors.append('timeout differs from reference')
     checks = revalidate(directory, jobs, rows)
@@ -255,7 +277,9 @@ def main():
     coverage = execution_coverage(manifest, rows)
     if not coverage['complete']:
         decision_reasons.append('Requested execution trials are disabled, missing, duplicated or unexpected')
-    result = {'reference': manifest['reference'], 'exploratory_missions': len(comparison),
+    result = {'reference': manifest['reference'],
+        'native_backend_identity': manifest.get('native_backend_identity'),
+        'exploratory_missions': len(comparison),
         'old_validated': sum(c['old_status'] == 'validated' for c in comparison),
         'new_validated': sum(c['new_status'] == 'validated' for c in comparison),
         'paired_outcomes': dict(counts), 'unsupported': unsupported,
@@ -291,6 +315,7 @@ table{{border-collapse:collapse;width:100%;margin:20px 0}}th,td{{padding:8px;bor
 </style><h1>Generator replay: {len(comparison)} exploratory missions</h1>
 <p>Same saved missions, seeds, budgets, limits and {manifest['timeout_s']:g} s external timeout.
 Generator override: {escape(str(manifest['reference'].get('generator_mode_override')))};
+numerical backend override: {escape(str(manifest['reference'].get('numerical_backend_override')))};
 catalog processes override: {escape(str(manifest['reference'].get('planning_workers_override')))}
 (saved serial/spawn replay assignments retained).
 {len(rows)}/{len(jobs)} total jobs recorded.</p>
@@ -305,7 +330,9 @@ Exact serial/spawn comparisons: {sum(r['matches'] is True for r in summary['repl
 Execution expectations: {summary['executions']['expectations_met']}/{summary['executions']['total']}.</p>
 <p>Artifact consistency errors: {len(integrity['errors'])}. Separate numerical revalidation:
 {checks['individual_plans']} individual plans, {checks['full_horizon_pairs']} full-horizon pairs,
-{checks['exact_pullout_connections']} exact recovery connections. Numerical errors: {len(checks['errors'])}.</p>
+{checks['exact_pullout_connections']} exact recovery connections and
+{checks['native_pullout_connections_within_tolerance']} native connections within
+1e-9 state / 1e-10 control absolute tolerance. Numerical errors: {len(checks['errors'])}.</p>
 <p>Corrupt final commands rejected: {checks['corrupt_final_commands_rejected']}.
 Post-arrival endpoint obstacles rejected: {checks['post_arrival_obstacles_rejected']}.</p>
 <p><a href="report.pdf">Measured campaign PDF</a> · <a href="missions.csv">Mission CSV</a> ·

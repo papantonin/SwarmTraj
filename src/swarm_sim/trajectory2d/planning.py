@@ -73,6 +73,7 @@ class Config:
     passage_guidance: str = "none"  # Offline intermediate-cell speed fitting, not departure retiming.
     candidate_guidance: str = "none"  # Own-rejection reference adjustments; never weaker validators.
     generator_mode: str = "geometric"  # Opt-in direct physical missions; historical default unchanged.
+    numerical_backend: str = "python"  # Optional construction kernel; validators always use Python.
     aircraft_profiles: tuple = ()  # Complete explicit (drone_id, AircraftProfile) bindings; offline only.
     aircraft_radius: float = 0.0  # Enclosing sphere; zero preserves the legacy point-aircraft model.
 
@@ -182,6 +183,10 @@ class Config:
             raise ValueError("candidate guidance requires coupled 3D flight")
         if self.generator_mode not in ("geometric", "physical_recovery_seed", "physical_mission"):
             raise ValueError("generator_mode must be geometric, physical_mission or physical_recovery_seed")
+        if self.numerical_backend not in ("python", "cpp"):
+            raise ValueError("numerical_backend must be python or cpp")
+        if self.numerical_backend == "cpp" and (not self.coupled_flight or self.generator_mode == "geometric"):
+            raise ValueError("cpp numerical_backend requires the coupled 3D physical generator")
         if self.generator_mode != "geometric" and not self.coupled_flight:
             raise ValueError("physical generator_mode requires coupled 3D flight")
         if self.generator_mode != "geometric" and self.passage_guidance != "none":
@@ -975,6 +980,9 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
 
 def plan_mission(snapshots: tuple[Snapshot, ...], config: Config = Config()):
     """Plan from a frozen snapshot; timing is excluded from reproducible payloads."""
+    if config.numerical_backend == 'cpp':
+        from .native_backend import require_native
+        require_native()  # Explicit selection must fail before starting catalogs.
     start = perf_counter()
     from .reservations import ReservationBudgetError
     try:
@@ -995,6 +1003,9 @@ def mission_document(result, config, snapshots, *, aircraft_profile=None):
                 "minimum_distance_lower_bound": result.minimum_distance_lower_bound,
                 "required_distance": result.required_distance,
                 "plans": [p.to_dict() for p in result.plans]}
+    if config.numerical_backend == 'cpp':
+        from .native_backend import identity
+        document['numerical_backend_identity'] = identity()
     if aircraft_profile is not None:
         from .aircraft_profiles import AircraftProfile
         if not isinstance(aircraft_profile, AircraftProfile):

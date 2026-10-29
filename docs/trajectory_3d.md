@@ -59,6 +59,12 @@ The editor's **Physical generator** checkbox selects the same mode; it is
 disabled for planar/legacy flight. See the [migration guide](generator_migration.md)
 for versioned shared scenarios and the separate PX4/Gazebo workflow.
 
+The physical generator can explicitly use `--numerical-backend cpp` after
+`./scripts/build_native.sh`. Python remains the default and independent
+validator. The initial native backend covers physical candidate construction;
+shared PX4 editor scenarios continue to require Python. See the
+[native kernel guide](native_kernel.md) for supported modes and measurements.
+
 ## Preparing drones and destination
 
 The preparation map remains an XY projection: select a drone, then click on

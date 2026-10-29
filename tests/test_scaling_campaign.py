@@ -167,10 +167,10 @@ def test_replay_report_detects_safety_and_snapshot_changes(campaign):
     reporter = importlib.import_module('report_generator_replay')
     original = campaign.make_jobs([1], [7], 0, ['core'])[0]
     job, = campaign.replay_jobs({'jobs': [original]}, ['core'], 'physical_mission')
-    assert reporter.input_differences(job, original) == []
+    assert reporter.input_differences(job, original, generator_mode='physical_mission') == []
     job['config']['position_error'] = 0
     job['snapshots'][0]['speed'] += 1
-    assert len(reporter.input_differences(job, original)) == 2
+    assert len(reporter.input_differences(job, original, generator_mode='physical_mission')) == 2
 
 
 def test_explicit_process_override_preserves_replay_pairs_and_safety(campaign):
@@ -205,6 +205,58 @@ def test_live_progress_does_not_present_partial_campaign_as_validated(campaign):
     assert '1/230' in html and '2/259' in html
     assert 'provisional progress' in html and 'Default remains geometric' in html
     assert 'Unsupported configuration requests' in html
+
+
+def test_explicit_backend_replay_preserves_legacy_inputs_and_guards_binary(campaign, monkeypatch):
+    reporter = importlib.import_module('report_generator_replay')
+    native = importlib.import_module('swarm_sim.trajectory2d.native_backend')
+    original = campaign.make_jobs([1], [7], 0, ['core'])[0]
+    original['config'].pop('numerical_backend')
+    before = json.dumps(original, sort_keys=True)
+    python_job, = campaign.replay_jobs({'jobs': [original]}, ['core'], 'physical_mission')
+    assert reporter.input_differences(python_job, original, generator_mode='physical_mission') == []
+    job, = campaign.replay_jobs({'jobs': [original]}, ['core'], 'physical_mission', 'cpp')
+    assert reporter.input_differences(job, original)
+    assert not reporter.input_differences(job, original, generator_mode='physical_mission', numerical_backend='cpp')
+    assert reporter.input_differences(job, original, generator_mode='physical_mission', numerical_backend='python')
+    job['config']['position_error'] = 0
+    assert reporter.input_differences(job, original, generator_mode='physical_mission', numerical_backend='cpp')
+    assert json.dumps(original, sort_keys=True) == before
+    monkeypatch.setattr(native, 'identity', lambda: {'binary_sha256': 'current'})
+    manifest = {'source_sha256': campaign.sources(), 'native_backend_identity': native.identity()}
+    campaign.check_sources(manifest)
+    manifest['native_backend_identity'] = {'binary_sha256': 'changed'}
+    with pytest.raises(RuntimeError, match='identity changed'):
+        campaign.check_sources(manifest)
+
+
+def test_replay_audit_rejects_unrecorded_generator_override(campaign):
+    reporter = importlib.import_module('report_generator_replay')
+    original = campaign.make_jobs([1], [7], 0, ['core'])[0]
+    original['config'].pop('generator_mode')
+    preserved, = campaign.replay_jobs({'jobs': [original]}, ['core'], None)
+    assert not reporter.input_differences(preserved, original)
+    changed, = campaign.replay_jobs({'jobs': [original]}, ['core'], 'physical_mission')
+    assert reporter.input_differences(changed, original)
+    assert not reporter.input_differences(changed, original, generator_mode='physical_mission')
+
+
+def test_campaign_cli_records_explicit_native_override(campaign, monkeypatch, tmp_path):
+    native = importlib.import_module('swarm_sim.trajectory2d.native_backend')
+    monkeypatch.setattr(native, 'identity', lambda: {'binary_sha256': 'test-only'})
+    saved = campaign.make_jobs([1], [7], 0, ['core'])[0]
+    reference = tmp_path/'reference.json'
+    reference.write_text(json.dumps({'jobs': [saved], 'counts': [1], 'seeds': [7], 'timeout_s': 120}))
+    captured = []
+    monkeypatch.setattr(campaign, 'run', lambda directory, manifest: captured.append(manifest) or 0)
+    assert campaign.main(['--output', str(tmp_path/'new'), '--reference', str(reference),
+        '--suites', 'core', '--generator-mode', 'physical_mission', '--numerical-backend', 'cpp',
+        '--no-execute']) == 0
+    manifest, = captured
+    assert manifest['native_backend_identity'] == {'binary_sha256': 'test-only'}
+    assert manifest['reference']['numerical_backend_override'] == 'cpp'
+    assert manifest['jobs'][0]['config']['numerical_backend'] == 'cpp'
+    assert manifest['timeout_s'] == 120
 
 
 def test_duplicate_execution_cannot_hide_missing_profile_or_job(campaign):

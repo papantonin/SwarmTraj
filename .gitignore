@@ -8,3 +8,5 @@ __pycache__/
 build/
 dist/
 results/
+src/swarm_sim/_trajectory_native*.so
+src/swarm_sim/_trajectory_native*.pyd
