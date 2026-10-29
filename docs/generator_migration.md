@@ -31,11 +31,14 @@ legacy flight retain their historical builder. Physical passage-window fitting
 remains unsupported and fails explicitly, preserving the original request.
 The editor keeps the previous configuration if a switch is invalid.
 
-New single/fleet JSON records use `swarm-px4-editor-v2` and
-`swarm-px4-editor-fleet-v2`, respectively. Both require
-`mission.generator_mode` (`geometric` or `physical_mission`). Existing v1 records
-explicitly load as geometric; an explicit CLI/editor override may then change
-the mode and export a v2 record. Unknown fields and missing v2 mode are rejected.
+New single/fleet JSON records use `swarm-px4-editor-v3` and
+`swarm-px4-editor-fleet-v3`, respectively. Both require
+`mission.generator_mode` (`geometric` or `physical_mission`) and
+`mission.numerical_backend` (`python` or `cpp`). C++ requires the physical mode;
+the editor exposes **C++ construction (off: Python)** and the native launchers
+accept `--numerical-backend cpp` after building the extension. Existing v1 records
+load as geometric/Python; v2 retains its explicit generator and selects Python.
+Overrides export a v3 record. Unknown fields and missing required fields are rejected.
 This preserves the meaning of archived scenes independently of future defaults.
 
 ## Performance and comparison procedure
@@ -221,3 +224,66 @@ The complete record is `verification.json`; the combined report is `report.pdf`
 and `report.md`, alongside the four immutable campaign manifests/journals.
 The geometric default is retained pending a fresh full qualification and
 reliable native fleet startup.
+
+## C++ editor and ordered-startup qualification (30 October 2026)
+
+The native numerical checkpoint is Git `e774b03`, following the Python checkpoint
+`c930826`. Shared editor v3 records now preserve the explicit backend, with strict
+v1/v2 loading as described above. Native X11 mouse events exercised physical
+selection, C++ selection, incompatible geometric rollback, Reset and accepted
+launch; the exported single-aircraft v3 scene was subsequently flown.
+
+Preparation checks preserve designation time, the fixed activation epoch and
+the original guard. Positive, late, missing-acknowledgement and measured-latency
+headless CLI trials keep executable output behind the existing all-or-none gate.
+Deterministic tests also cover measured latency for both numerical backends and
+the exact three-aircraft readiness boundary, without refreshing the snapshot.
+The final full suite passed **960 tests in 609.45 s**, with the four existing
+Gymnasium float32-bound warnings and unchanged source hashes during the run.
+The earlier interrupted suite is retained and is not counted as a pass.
+
+A subsequent bounded CPU-contention check kept four CPU-bound processes alive
+through each of three C++ planning trials. Planning took 0.367–0.675 s, versus
+0.200 s without this added load. All trials retained exactly the same raw plan
+signature and passed the original three-aircraft preparation gate at fixed
+activation 3 s. Explicit 8 s latency and missing-acknowledgement CLI trials
+rejected activation and exported no individual plans or execution telemetry.
+These finite load observations do not guarantee a computation deadline.
+
+Startup now acquires an atomic telemetry/receipt snapshot, rejects old callback
+receipts, and retains the original strict 3 m altitude / 3 m/s nominal component
+velocity bounds and three-second estimator timeout. The release receipt cutoff
+is taken after atomic publication; a callback during publication is excluded by
+a focused race regression. Fleet warm initialization is ordered by ID after both
+existing all-aircraft barriers, with each successor waiting for its predecessor's
+own state gates, one controller reset and Mission-start acknowledgement. This
+staggering does not provide a timed PX4 departure or a distributed protocol.
+
+The final frozen implementation completed one single-aircraft and three fresh
+four-aircraft headless PX4/Gazebo experiments, all using C++ physical reference
+construction and simulation-only removal at observed target contact:
+
+| Final trial | Spatial error p95 across aircraft | Largest observed target-contact distance | Minimum observed pair distance |
+|---|---:|---:|---:|
+| Single | 4.80 m | 5.89 m | Not applicable |
+| Fleet 1 | 4.70–4.93 m | 5.80 m | 157.56 m |
+| Fleet 2 | 4.56–5.29 m | 5.65 m | 157.82 m |
+| Fleet 3 | 4.63–5.36 m | 5.69 m | 163.03 m |
+
+All 13 aircraft passed their actual/estimated initial-state gates, retained one
+pose/impulse and one controller reset, and completed acknowledged own-model
+removal with verified absence. The original 6 m target, 25 m p95 spatial and
+30 m sampled pair thresholds were unchanged. All three fleet references have
+the same immutable mission SHA-256, and source hashes match throughout the
+final native trials. Pinned runtime/SDK identity, isolated networking, aircraft
+IDs/ports and independent parameter directories remain unchanged.
+
+Evidence is under `results/cpp-integration-20261029-235709/`: final runs use the
+`qualified-*` directories; `integration-verification.json` audits inputs, gates,
+identities and completion. Earlier frozen single/fleet pilots before the receipt
+cutoff correction are retained separately as `native-*`; they are not substituted
+for final qualification. These finite successful repetitions improve the startup
+evidence but do not establish reliability under every load or certify continuous
+separation. MAVSDK provides receipt timing but no source timestamp for the
+position/velocity estimate. The historical startup failure remains preserved;
+the default remains geometric/Python.

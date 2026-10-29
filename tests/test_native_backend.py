@@ -174,11 +174,15 @@ def test_python_validator_is_not_routed_to_native(monkeypatch):
     assert validate_individual(r.plans[0],s,c)
 
 
-def test_shared_px4_schema_does_not_silently_lose_backend_choice():
-    from swarm_sim.px4_scenario import default_scenario,scenario_record
+def test_shared_px4_schema_persists_explicit_backend_choice(tmp_path):
+    import json
+    from swarm_sim.px4_scenario import default_scenario,scenario_record,load_scenario
     s,c=default_scenario()
-    with pytest.raises(ValueError,match='Python numerical backend'):
-        scenario_record(s,replace(c,generator_mode='physical_mission',numerical_backend='cpp'))
+    c=replace(c,generator_mode='physical_mission',numerical_backend='cpp')
+    record=scenario_record(s,c)
+    assert record['mission']['numerical_backend']=='cpp'
+    path=tmp_path/'cpp.json';path.write_text(json.dumps(record))
+    assert load_scenario(path)==(s,c)
 
 
 @requires_native

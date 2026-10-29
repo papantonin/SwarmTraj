@@ -26,7 +26,8 @@ from .trajectory2d.obstacles import Obstacle, load_obstacles
 from .trajectory2d.planning import mission_document
 from .px4_termination import end_behavior, with_end_behavior, flight_reference
 
-SCHEMA = 'swarm-px4-editor-fleet-v2'
+SCHEMA = 'swarm-px4-editor-fleet-v3'
+PREVIOUS_SCHEMA = 'swarm-px4-editor-fleet-v2'
 LEGACY_SCHEMA = 'swarm-px4-editor-fleet-v1'
 COUNT = 4
 
@@ -62,18 +63,23 @@ def fleet_record(snapshots, config):
 def load_fleet(path):
     record = json.loads(Path(path).read_text())
     fields = set(MISSION_FIELDS)|{'separation'}
-    legacy = isinstance(record, dict) and record.get('schema') == LEGACY_SCHEMA
+    schema = record.get('schema') if isinstance(record, dict) else None
+    legacy = schema == LEGACY_SCHEMA
     if legacy:
         fields.remove('generator_mode')
+    if schema != SCHEMA:
+        fields.remove('numerical_backend')
     if (not isinstance(record, dict) or set(record) != {'schema', 'snapshots', 'mission'}
-            or record['schema'] not in (SCHEMA, LEGACY_SCHEMA) or not isinstance(record['snapshots'], list)
+            or schema not in (SCHEMA, PREVIOUS_SCHEMA, LEGACY_SCHEMA) or not isinstance(record['snapshots'], list)
             or not isinstance(record['mission'], dict) or set(record['mission']) != fields):
-        raise ValueError('Expected swarm-px4-editor-fleet-v1/v2 JSON, not a single-aircraft scene.')
+        raise ValueError('Expected swarm-px4-editor-fleet-v1/v2/v3 JSON, not a single-aircraft scene.')
     try:
         snapshots = tuple(Snapshot(**{**s, 'state': tuple(s['state'])}) for s in record['snapshots'])
         settings = dict(record['mission'])
         if legacy:
             settings['generator_mode'] = 'geometric'
+        if schema != SCHEMA:
+            settings['numerical_backend'] = 'python'
         settings['target'] = tuple(settings['target'])
         settings['obstacles'] = tuple(Obstacle(**o) for o in settings['obstacles'])
         if settings['cruise_altitude_range'] is not None:
@@ -156,6 +162,7 @@ def write_fleet(output, snapshots, config, document, camera_mode='free'):
         'camera_mode': camera_mode,
         'end_behavior': end_behavior(document),
         'mission_sha256': document['sha256'], 'source_sha256': single.source_hashes(),
+        'native_warm_start_schedule': 'id_ordered_after_all_armed_ready',
         'timed_tracking_supported': False, 'safety_certificate_transferred': False})
     for index in range(COUNT):
         own = own_document(document, index)
@@ -193,6 +200,54 @@ def verify_worker_scene(output, own, instance):
     expected = fleet_scene(document, single.ROOT/'examples/gazebo/worlds/default.sdf')
     if ET.tostring(expected.getroot()) != ET.tostring(ET.parse(root/'scene.sdf').getroot()):
         raise ValueError('Shared fleet scene mismatch; no arm command sent.')
+
+
+def wait_bootstrap_turn(output, instance, parent_mission_sha256, timeout=120.):
+    """ID-ordered warm initialization after both existing all-aircraft barriers.
+
+    Startup acknowledgements carry no peer state. This deliberately staggers
+    native mission starts and makes no clock-aligned fleet-flight claim.
+    """
+    if instance not in range(COUNT) or output.name != f'drone-{instance}':
+        raise ValueError('Invalid ordered bootstrap instance')
+    root=output.parent
+    def ready():
+        if (root/'abort.json').exists():
+            raise RuntimeError('Another fleet worker failed before ordered initialization')
+        if not all((root/f'drone-{k}'/(phase+'.json')).exists()
+                   for k in range(COUNT) for phase in ('ready-to-arm','armed-ready')):
+            return False
+        if instance==0:
+            return True
+        previous=root/f'drone-{instance-1}'/'warm-start-complete.json'
+        if not previous.exists():
+            return False
+        record=json.loads(previous.read_text())
+        if record != {'fleet_index':instance-1,'parent_mission_sha256':parent_mission_sha256,
+                      'actual_state_passed':True,'estimated_state_passed':True,
+                      'controller_reset_count':1,'mission_started':True}:
+            raise ValueError('Invalid predecessor warm-start acknowledgement')
+        return True
+    started=time.monotonic()
+    single.wait_for(ready,timeout,'Fleet ordered warm initialization timed out',interval=.01)
+    return {'mode':'id_ordered','index':instance,'wait_wall_s':time.monotonic()-started,
+            'predecessor':instance-1 if instance else None,'timed_departure_supported':False}
+
+
+def complete_bootstrap_turn(output, instance, parent_mission_sha256, evidence):
+    """Publish only after own actual/estimated gates, one reset and Mission ACK."""
+    if instance not in range(COUNT) or output.name != f'drone-{instance}':
+        raise ValueError('Invalid ordered bootstrap instance')
+    if (evidence.get('airborne_initialization',{}).get('initial_state_passed') is not True
+            or evidence.get('airborne_estimator_acquisition',{}).get('passed') is not True
+            or evidence.get('airborne_controller_reset_count') != 1
+            or evidence.get('mission_started') is not True):
+        raise ValueError('Warm-start completion requires own state gates, one reset and Mission acknowledgement')
+    pending=output/'warm-start-complete.pending.json'
+    single.save_json(pending,{'fleet_index':instance,'parent_mission_sha256':parent_mission_sha256,
+        'actual_state_passed':True,'estimated_state_passed':True,'controller_reset_count':1,
+        'mission_started':True})
+    pending.rename(output/'warm-start-complete.json')
 
 
 def pair_observations(output, separation, active_only=False):
@@ -265,6 +320,7 @@ def worker(output, timeout):
         removed = end_behavior(json.loads((output/'point_mass_mission.json').read_text())) == 'remove-at-target'
         observations = pair_observations(output, json.loads((output/'scenario.json').read_text())['mission']['separation'], active_only=removed)
         report = {'completed': True, 'aircraft_count': COUNT, 'all_aircraft_landed': not removed,
+                  'native_warm_start_schedule': 'id_ordered_after_all_armed_ready',
                   'all_aircraft_removed_at_target': removed,
                   'backend_test_passed': observations['sampled_separation_passed'],
                   'pair_observations': observations, 'timed_tracking_supported': False,
@@ -316,6 +372,8 @@ def main(argv=None):
     parser.add_argument('--seed', type=int)
     parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
                         help='explicit generator override; saved v1 scenes remain geometric otherwise')
+    parser.add_argument('--numerical-backend', choices=['python', 'cpp'],
+                        help='physical reference construction backend; independent validation and PX4 control are unchanged')
     parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--timeout', type=float, default=1200)
     parser.add_argument('--output', type=Path)
@@ -342,6 +400,8 @@ def main(argv=None):
         overrides = {}
         if args.generator_mode is not None:
             overrides['generator_mode'] = args.generator_mode
+        if args.numerical_backend is not None:
+            overrides['numerical_backend'] = args.numerical_backend
         if args.workers is not None:
             overrides['planning_workers'] = args.workers
         if overrides:
@@ -363,7 +423,7 @@ def main(argv=None):
         if args.run:
             return single.managed_run(output.resolve(), args.gui, args.timeout, args.gpu)
         return 0
-    except (ValueError, OSError, subprocess.SubprocessError) as error:
+    except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f'ERROR: {error}', flush=True)
         return 2
 

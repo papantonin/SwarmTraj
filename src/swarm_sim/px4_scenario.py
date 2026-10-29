@@ -18,13 +18,14 @@ from .trajectory2d.obstacles import Obstacle
 from .trajectory2d.dynamics import holding_circle
 
 
-SCHEMA = 'swarm-px4-editor-v2'
+SCHEMA = 'swarm-px4-editor-v3'
+PREVIOUS_SCHEMA = 'swarm-px4-editor-v2'
 LEGACY_SCHEMA = 'swarm-px4-editor-v1'
 MISSION_FIELDS = ('seed', 'target', 'target_altitude', 'target_radius', 'horizon',
                   'arrival_deadline', 'post_arrival_time',
                   'activation_time', 'min_extra_loiter', 'max_extra_loiter',
                   'approach_spread_deg', 'cruise_altitude_range', 'descent_angle_deg',
-                  'obstacle_clearance', 'obstacles', 'generator_mode')
+                  'obstacle_clearance', 'obstacles', 'generator_mode', 'numerical_backend')
 
 
 def default_scenario(seed=7, obstacles=()):
@@ -40,8 +41,6 @@ def default_scenario(seed=7, obstacles=()):
 
 
 def validate_scenario(snapshots, config):
-    if config.numerical_backend != 'python':
-        raise ValueError('Shared PX4 scenarios currently require the Python numerical backend; C++ is an offline planner option.')
     if len(snapshots) != 1 or snapshots[0].drone_id != 0:
         raise ValueError('Gazebo editor currently supports exactly one drone (ID 0).')
     snapshot = snapshots[0]
@@ -85,10 +84,13 @@ def scenario_record(snapshots, config):
 
 def load_scenario(path):
     record = json.loads(Path(path).read_text())
-    legacy = isinstance(record, dict) and record.get('schema') == LEGACY_SCHEMA
+    schema = record.get('schema') if isinstance(record, dict) else None
+    legacy = schema == LEGACY_SCHEMA
     allowed = set(MISSION_FIELDS) - ({'generator_mode'} if legacy else set())
+    if schema != SCHEMA:
+        allowed.remove('numerical_backend')
     if (not isinstance(record, dict) or set(record) != {'schema', 'snapshots', 'mission'}
-            or record['schema'] not in (SCHEMA, LEGACY_SCHEMA) or not isinstance(record['snapshots'], list)
+            or schema not in (SCHEMA, PREVIOUS_SCHEMA, LEGACY_SCHEMA) or not isinstance(record['snapshots'], list)
             or len(record['snapshots']) != 1 or not isinstance(record['mission'], dict)
             or not allowed-{'arrival_deadline', 'post_arrival_time'} <= set(record['mission'])
             or not set(record['mission']) <= allowed):
@@ -105,6 +107,8 @@ def load_scenario(path):
         if legacy:
             # Retain historical meaning even if the fresh-scene default changes.
             mission['generator_mode'] = 'geometric'
+        if schema != SCHEMA:
+            mission['numerical_backend'] = 'python'
         mission['target'] = tuple(mission['target'])
         mission['obstacles'] = tuple(Obstacle(**o) for o in mission['obstacles'])
         if mission['cruise_altitude_range'] is not None:

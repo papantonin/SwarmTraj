@@ -38,8 +38,15 @@ Library callers select `Config(generator_mode="physical_mission",
 numerical_backend="cpp", ...)`. A missing/incompatible extension fails explicitly
 before catalog generation. There is no automatic fallback. The option requires
 coupled 3D physical generation; geometric, planar and legacy modes reject it.
-Shared PX4 editor scenarios currently require the Python backend, so saving a
-scenario cannot silently discard this offline planner option.
+Shared PX4 editor scenarios now save the backend explicitly in v3 records.
+Historical v1/v2 records select Python; v3 requires both generator and backend.
+The editor's **C++ construction (off: Python)** checkbox is enabled only for
+physical coupled 3D generation. A missing extension or incompatible selection
+is rejected without switching backends silently. Native PX4 controllers and
+Gazebo aerodynamics remain unchanged.
+The subsequent [editor/startup qualification](generator_migration.md#c-editor-and-ordered-startup-qualification-30-october-2026)
+records the 960-test suite, readiness/load checks and one single plus three
+four-aircraft native trials for this integration.
 
 Build the standalone library without Python, or run sanitizer checks, with:
 

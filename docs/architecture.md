@@ -8,7 +8,7 @@ Gazebo aerodynamics or transfer a point-mass safety claim to native execution.
 ```mermaid
 flowchart TD
     Editor["Python editor / CLI: aircraft, target, obstacles, timing and generator"]
-    JSON["Shared single/fleet JSON v2: explicit generator_mode; v1 means geometric"]
+    JSON["Shared single/fleet JSON v3: generator + numerical backend; v1/v2 retain historical meanings"]
     Input["Fixed designation snapshot and own physical profiles; input checks and approach sectors"]
     Mode{"Generator choice: coupled 3D"}
     Geom["geometric: routing/vertical proposals, then coupled physical rollout"]
@@ -64,7 +64,9 @@ The optional [C++20 kernel](native_kernel.md) runs complete physical constructio
 loops with resolved own-aircraft parameters and immutable output buffers.
 Proposal RNG, independent validation, joint search and execution remain in
 Python. Its backend identity is included in native mission fingerprints. Shared
-PX4 editor scenarios currently use Python. The existing generated local PDF
+PX4 editor scenarios v3 persist the selected construction backend; v1/v2 retain
+Python. Native fleet warm initialization is ordered by ID after the existing
+all-aircraft readiness/arming barriers, without claiming timed departure. The existing generated local PDF
 predates this optional numerical branch; regenerate it before using it as an
 up-to-date architecture illustration.
 

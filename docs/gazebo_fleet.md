@@ -29,11 +29,15 @@ including all four geometric return screens. See the
 [trajectory-only completion details](gazebo_editor.md#trajectory-only-completion-default-for-editedsaved-scenarios)
 for the simulation-specific mission requirement and unchanged planner scope.
 Closing it cancels without starting the simulator. The scenario schema is
-`swarm-px4-editor-fleet-v2`, with an explicit `mission.generator_mode`.
-Legacy fleet-v1 files remain readable and select `geometric` unless explicitly
+`swarm-px4-editor-fleet-v3`, with explicit `mission.generator_mode` and
+`mission.numerical_backend`. Fleet-v2 retains its generator and selects Python.
+Legacy fleet-v1 files remain readable and select geometric/Python unless explicitly
 overridden with `--generator-mode physical_mission` before editing/planning.
 The editor checkbox offers the same choice; `--workers 1|2|0` configures catalog
-processes (serial, two, or automatic). These settings do not alter PX4 instance
+processes (serial, two, or automatic). The **C++ construction (off: Python)**
+checkbox or `--numerical-backend cpp` selects native physical reference
+construction after `./scripts/build_native.sh`; it requires the physical
+generator and is persisted in v3. These settings do not alter PX4 instance
 isolation or the native flight gates. Single-aircraft JSON is intentionally not silently
 converted into four coincident aircraft. IDs must be exactly 0, 1, 2, 3.
 Ground spawn XY points must be at least 30 m apart even if flight altitudes
@@ -60,11 +64,28 @@ runtime and original airframe/checks of the single-aircraft backend.
 
 All four workers must pass normal readiness and mission feasibility before any
 arming. After arming and mission entry selection, another preparation barrier
-precedes each model's one-shot warm airborne initialization. Each worker still
+precedes warm airborne initialization. Workers then initialize in deterministic
+ID order: a successor may release only after its predecessor passes the unchanged
+actual/nominal-estimated-state gates, performs its one controller reset, and
+receives its own Mission-start acknowledgement. A missing/invalid predecessor
+acknowledgement or timeout aborts the experiment. This reduces simultaneous
+initialization bursts and deliberately staggers native starts. Each worker still
 checks its own actual/estimated state and reinitializes only its own native
 fixed-wing controller once. No worker is fed other aircraft states for guidance.
 This startup coordination does **not** establish clock-aligned PX4 departure.
 The Python bootstrap becomes observer-only after its one pose/impulse operation.
+
+The estimated-state gate snapshots telemetry values and monotonic receipt times
+under one lock. It requires receipts after atomic release-request publication,
+no older than one wall second,
+and a ground-truth simulation timestamp no earlier than the physical initial
+snapshot. Its original strict altitude error `<3 m`, nominal east/north velocity
+component errors `<3 m/s`, and three-second acquisition timeout are retained.
+MAVSDK provides no source timestamp for `PositionVelocityNed`; receipt freshness
+does not prove exact source-time alignment. `airborne-estimator-check.json`
+retains every acquisition check on success or failure. Each worker publishes
+`warm-start-complete.json` atomically after its own gates/reset/Mission ACK;
+these startup messages contain no peer state and are not in-flight guidance.
 
 Four trajectory annotations use different colors. The camera now starts in a
 free overview; see the keyboard controls below. The

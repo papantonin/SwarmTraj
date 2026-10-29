@@ -53,6 +53,14 @@ def command(args, **kwargs):
     return subprocess.run(args, check=True, text=True, capture_output=True, timeout=30, **kwargs).stdout
 
 
+def publish_airborne_release(output, mission_sha256):
+    """One atomic own-model request; use a conservative post-publication cutoff."""
+    pending=output/'airborne-release.pending.json'
+    save_json(pending, {'mission_sha256':mission_sha256,'release':True})
+    pending.rename(output/'airborne-release.json')
+    return time.monotonic()
+
+
 def source_hashes():
     files = [Path(__file__), ROOT/'src/swarm_sim/px4_reference.py', ROOT/'src/swarm_sim/px4_scene.py',
              ROOT/'src/swarm_sim/px4_scenario.py',
@@ -206,6 +214,7 @@ class Measurements:
     def __init__(self):
         self.lock = threading.Lock()
         self.latest = {}
+        self.received_at = {}
         self.rows = []
         self.status = []
 
@@ -213,6 +222,7 @@ class Measurements:
         def receive(value, _):
             with self.lock:
                 self.latest[name] = value
+                self.received_at[name] = time.monotonic()
                 if name == 'status_text':
                     self.status.append(str(value))
                 if name == 'ground_truth':
@@ -228,6 +238,49 @@ class Measurements:
                         'pitch_deg': None if attitude is None else attitude.pitch_deg,
                         'airspeed_m_s': None if metrics is None or not math.isfinite(metrics.airspeed_m_s) else metrics.airspeed_m_s})
         return receive
+
+
+def airborne_estimate_check(measurements, desired, initial_time_s, yaw_rate, release_received_s, now_s=None):
+    """Observer-only startup gate; preserve the original nominal-state bounds.
+
+    MAVSDK PositionVelocityNed has no source timestamp. Receipt freshness is
+    explicit but cannot prove source-time alignment or a stable full flight.
+    """
+    with measurements.lock:
+        estimate = measurements.latest.get('position_velocity_ned')
+        truth = measurements.latest.get('ground_truth')
+        estimate_at = measurements.received_at.get('position_velocity_ned')
+        truth_at = measurements.received_at.get('ground_truth')
+        if estimate is None or truth is None or estimate_at is None or truth_at is None:
+            return {'passed': False, 'reason': 'missing_samples'}
+        height = -estimate.position.down_m
+        velocity = np.array([estimate.velocity.east_m_s, estimate.velocity.north_m_s])
+        sim_time = truth.timestamp_us/1e6
+        now = time.monotonic() if now_s is None else now_s
+    record = {'passed': False, 'height_m': height, 'velocity_east_m_s': float(velocity[0]),
+        'velocity_north_m_s': float(velocity[1]), 'ground_truth_sim_time_s': sim_time,
+        'estimate_receipt_s': estimate_at, 'ground_truth_receipt_s': truth_at,
+        'estimate_source_timestamp_available': False,
+        'height_tolerance_m': 3., 'velocity_component_tolerance_m_s': 3.,
+        'maximum_receipt_age_s': 1.}
+    if not np.all(np.isfinite([height,*velocity,sim_time,estimate_at,truth_at,now,release_received_s])):
+        finite_record = {key: None if isinstance(value,float) and not math.isfinite(value) else value
+                         for key,value in record.items()}
+        return {**finite_record, 'reason': 'nonfinite_sample'}
+    if min(estimate_at,truth_at) <= release_received_s or sim_time < initial_time_s:
+        return {**record, 'reason': 'pre_release_sample'}
+    if not (0 <= now-estimate_at <= 1. and 0 <= now-truth_at <= 1.):
+        return {**record, 'reason': 'stale_sample'}
+    elapsed = sim_time-initial_time_s
+    yaw = desired[4]+yaw_rate*elapsed
+    predicted = desired[3]*np.array([math.cos(yaw),math.sin(yaw)])
+    height_error = abs(height-desired[2])
+    velocity_error = np.abs(velocity-predicted)
+    passed = bool(height_error < 3. and np.all(velocity_error < 3.))
+    return {**record, 'passed': passed, 'reason': 'ready' if passed else 'nominal_state_mismatch',
+        'elapsed_since_initial_state_s': elapsed, 'height_error_m': float(height_error),
+        'velocity_component_errors_m_s': velocity_error.tolist(),
+        'nominal_velocity_east_north_m_s': predicted.tolist()}
 
 
 def wait_for(predicate, timeout, message, interval=.2):
@@ -478,9 +531,12 @@ def execute_worker(output, timeout_s):
             report['airborne_first_mission_sequence'] = entry_sequence
             if fleet:
                 barrier(output, 'armed-ready')
-            pending = output/'airborne-release.pending.json'
-            save_json(pending, {'mission_sha256': recorded_hash, 'release': True})
-            pending.rename(output/'airborne-release.json')
+                from .px4_fleet import wait_bootstrap_turn
+                report['fleet_bootstrap_order'] = wait_bootstrap_turn(
+                    output, instance, original['parent_mission_sha256'])
+                wait_for(lambda: measurements.latest.get('armed') is True, 3.,
+                         'PX4 did not confirm armed state before its ordered warm initialization')
+            release_received_s = publish_airborne_release(output, recorded_hash)
             wait_for(lambda: (output/'airborne-initial-state.json').exists(), 5.,
                      'airborne state was not observed after the release request')
             initialization = json.loads((output/'airborne-initial-state.json').read_text())
@@ -506,24 +562,22 @@ def execute_worker(output, timeout_s):
             print('One-shot airborne initialization confirmed; no continued simulator velocity/pose control.', flush=True)
             wait_for(lambda: measurements.latest.get('in_air') is True, 3.,
                      'PX4 did not detect airborne state before Mission mode')
+            checks = []
             def estimated_airborne_state_ready():
-                value = measurements.latest.get('position_velocity_ned')
-                if value is None:
-                    return False
-                position, velocity = value.position, value.velocity
-                elapsed = max(0., measurements.latest['ground_truth'].timestamp_us/1e6-snapshot['sim_time_s'])
-                yaw = desired[4] + original['snapshots'][0]['state'][3]*elapsed
-                predicted_velocity = desired[3]*np.array([math.cos(yaw), math.sin(yaw)])
-                return (abs(-position.down_m-desired[2]) < 3
-                        and abs(velocity.east_m_s-predicted_velocity[0]) < 3
-                        and abs(velocity.north_m_s-predicted_velocity[1]) < 3)
-            wait_for(estimated_airborne_state_ready, 3.,
-                     'PX4 estimated airborne position/velocity did not converge before Mission mode', interval=.02)
-            value = measurements.latest['position_velocity_ned']
-            report['airborne_estimated_state_before_mission'] = {
-                'height_m': -value.position.down_m,
-                'velocity_east_m_s': value.velocity.east_m_s,
-                'velocity_north_m_s': value.velocity.north_m_s}
+                check = airborne_estimate_check(measurements, desired, snapshot['sim_time_s'],
+                    original['snapshots'][0]['state'][3], release_received_s)
+                checks.append(check)
+                return check['passed']
+            try:
+                wait_for(estimated_airborne_state_ready, 3.,
+                         'PX4 estimated airborne position/velocity did not converge before Mission mode', interval=.02)
+            finally:
+                report['airborne_estimator_acquisition'] = {'passed': bool(checks and checks[-1]['passed']),
+                    'timeout_wall_s': 3., 'release_receipt_s': release_received_s,
+                    'checks': checks, 'nominal_state_gate_retained': True,
+                    'receipt_freshness_is_not_source_time_alignment': True}
+                save_json(output/'airborne-estimator-check.json', report['airborne_estimator_acquisition'])
+            report['airborne_estimated_state_before_mission'] = checks[-1]
             # This pinned prerelease controller keeps the ground-level TECS
             # altitude reference through an AUTO-mode estimator height reset.
             # Reinitialize that controller ONCE from the now-observed airborne
@@ -533,8 +587,12 @@ def execute_worker(output, timeout_s):
                 subprocess.run(native_command('fw_lat_lon_control', operation),
                                check=True, capture_output=True, text=True, timeout=3)
             report['airborne_controller_initialization'] = 'one native fw_lat_lon_control stop/start after estimated-state acquisition; all original parameters retained'
+            report['airborne_controller_reset_count'] = 1
             mission.start_mission()
             report['mission_started'] = True
+            if fleet:
+                from .px4_fleet import complete_bootstrap_turn
+                complete_bootstrap_turn(output, instance, original['parent_mission_sha256'], report)
             if os.environ.get('HEADLESS') != '1':
                 subprocess.Popen(['gz', 'sim', '-g'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 report['camera_follow'] = initialize_camera_follow(before_arming=False)
@@ -703,13 +761,15 @@ def main(argv=None):
     parser.add_argument('--seed', type=int, help='PRNG seed; default 7, or the saved scenario seed')
     parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
                         help='explicit scenario/editor generator override; saved v1 scenes remain geometric otherwise')
+    parser.add_argument('--numerical-backend', choices=['python', 'cpp'],
+                        help='physical reference construction backend; independent validation and PX4 control are unchanged')
     parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--obstacles', type=Path, help='static box/cylinder JSON shared with Matplotlib; included in planning and Gazebo collisions, not certified PX4 avoidance')
     parser.add_argument('--airborne-start', action='store_true', help='experimental warm start: normal ground readiness/arming, one-shot physical initialization at the reference start; no cold in-air boot')
     parser.add_argument('--edit-scenario', action='store_true', help='edit aircraft, target and obstacles, validate the reference, then launch Gazebo with --run')
     parser.add_argument('--end-behavior', choices=['remove-at-target', 'land'],
                         help='editor/scenario default: remove-at-target; historical benchmark default: land')
-    parser.add_argument('--scenario', type=Path, help='load single-aircraft or fleet-v1/v2 JSON with --num-drones 4; implies airborne start')
+    parser.add_argument('--scenario', type=Path, help='load single-aircraft or fleet-v1/v2/v3 JSON with --num-drones 4; implies airborne start')
     parser.add_argument('--timeout', type=float, default=600., help='wall seconds for startup, reference and selected completion, not the planning horizon')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--worker', type=Path, help=argparse.SUPPRESS)
@@ -745,13 +805,15 @@ def main(argv=None):
         if args.scenario and args.seed is not None:
             from dataclasses import replace
             scenario = (scenario[0], replace(scenario[1], seed=seed))
-        if (args.generator_mode is not None or args.workers is not None) and scenario is None:
-            raise ValueError('generator-mode/workers require --scenario or --edit-scenario; historical bench is unchanged')
+        if (args.generator_mode is not None or args.numerical_backend is not None or args.workers is not None) and scenario is None:
+            raise ValueError('generator-mode/numerical-backend/workers require --scenario or --edit-scenario; historical bench is unchanged')
         if scenario is not None:
             from dataclasses import replace
             overrides = {}
             if args.generator_mode is not None:
                 overrides['generator_mode'] = args.generator_mode
+            if args.numerical_backend is not None:
+                overrides['numerical_backend'] = args.numerical_backend
             if args.workers is not None:
                 overrides['planning_workers'] = args.workers
             scenario = scenario[0], replace(scenario[1], **overrides)
@@ -827,7 +889,7 @@ def main(argv=None):
         result = managed_run(output.resolve(), args.gui, args.timeout, args.gpu)
         print(f'Artifacts: {output}', flush=True)
         return result
-    except (ValueError, OSError, subprocess.SubprocessError, importlib.metadata.PackageNotFoundError) as error:
+    except (ValueError, OSError, RuntimeError, subprocess.SubprocessError, importlib.metadata.PackageNotFoundError) as error:
         print(f'ERROR: {error}', flush=True)
         if output.exists() and not (output/'launch_error.json').exists():
             save_json(output/'launch_error.json', {'type': type(error).__name__, 'message': str(error)})

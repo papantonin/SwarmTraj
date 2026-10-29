@@ -45,11 +45,20 @@ Both paths use the independent full-horizon physical/obstacle/joint validators.
 `--workers 0` selects available CPUs. These overrides apply before the editor
 opens, and do not change physical limits or the native PX4 controller.
 
-New saved scenarios use `swarm-px4-editor-v2` with a required
-`mission.generator_mode`. Existing v1 files remain readable and explicitly mean
-`geometric`, even if fresh-scene defaults change later. A mode field in a v1
-record is rejected; save it as v2. The standalone historical benchmark without
-an edited/saved scene does not accept generator/process overrides.
+After `./scripts/build_native.sh`, add `--generator-mode physical_mission`
+and `--numerical-backend cpp` to accelerate reference construction. The editor's
+**C++ construction (off: Python)** checkbox changes this same option and is
+enabled only with the physical coupled 3D generator. Select Python before
+switching back to geometric generation. Missing native extensions and invalid
+combinations are rejected; there is no automatic fallback. **Reset** restores
+both the input generator and backend. Validation and native PX4 control remain
+unchanged.
+
+New scenarios use `swarm-px4-editor-v3` with required
+`mission.generator_mode` and `mission.numerical_backend`. Existing v1 files mean
+`geometric` plus `python`; v2 requires its explicit generator and means `python`.
+Newer fields in older records are rejected. The historical standalone benchmark
+without an edited/saved scene does not accept generator/backend/process overrides.
 See the [migration gates and example commands](generator_migration.md).
 
 ## Editing
@@ -172,8 +181,8 @@ scenario.json: snapshot + mission inputs + obstacle solids
          → warm airborne initialization → native loiter → reference waypoints
 ```
 
-The versioned `swarm-px4-editor-v2` JSON is intentionally strict (v1 remains
-readable with its historical geometric mode). Snapshot
+The versioned `swarm-px4-editor-v3` JSON is intentionally strict (v1/v2 remain
+readable with their historical meanings). Snapshot
 `state` is `[x, y, heading_radians, signed_yaw_rate_rad_s]`; `speed` is m/s,
 altitudes and all obstacle dimensions are metres. A positive yaw rate is a
 counter-clockwise turn; `radius = speed / abs(yaw_rate)`. Mission keys use the
@@ -195,6 +204,14 @@ bank sign is converted to the Gazebo aircraft's roll convention. Actual initial
 position/velocity/attitude/angular-rate gates and PX4's estimated-state gate
 must pass. The documented native controller reinitialization is still performed
 once. Afterwards the bootstrap only observes; it does not force the flight path.
+
+The estimated-state gate retains its strict 3 m altitude / 3 m/s nominal
+horizontal component bounds and three-second timeout. It also rejects callback
+receipts from before atomic release-request publication or older than one wall
+second. Receipt time is not the missing MAVSDK estimate source timestamp.
+`airborne-estimator-check.json` records acquisition checks on success or failure.
+The [latest editor and startup qualification](generator_migration.md#c-editor-and-ordered-startup-qualification-30-october-2026)
+includes the native C++ editor export and repeated fleet experiments.
 
 PX4 executes `NAV_LOITER_TIME` with the original circle center, altitude, radius,
 direction, airspeed and selected hold duration, then flies the post-loiter

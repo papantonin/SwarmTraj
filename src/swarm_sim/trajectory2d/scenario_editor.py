@@ -50,6 +50,11 @@ class ScenarioEditor:
         self.generator.labels[0].set_fontsize(9)
         self.figure.text(0.41, 0.9125, 'Off: geometric generator', fontsize=8)
         self.generator.on_clicked(self.toggle_generator)
+        self.backend = CheckButtons(self.figure.add_axes([0.62, 0.9025, 0.35, 0.025]),
+                                    ['C++ construction (off: Python)'], [config.numerical_backend == 'cpp'])
+        self.backend.labels[0].set_fontsize(9)
+        self.backend.on_clicked(self.toggle_backend)
+        self._sync_backend()
         self.apply_button = Button(self.figure.add_axes([0.77, 0.335, 0.19, 0.04]), "Apply")
         self.horizon_input = TextBox(self.figure.add_axes([0.19, 0.355, 0.08, 0.035]),
                                      "Horizon (s) ", initial=f"{config.horizon:g}")
@@ -117,6 +122,8 @@ class ScenarioEditor:
     def toggle_generator(self, label=None):
         requested = 'physical_mission' if self.generator.get_status()[0] else 'geometric'
         try:
+            if requested == 'geometric' and self.config.numerical_backend == 'cpp':
+                raise ValueError('Switch off C++ construction before selecting the geometric generator.')
             updated = replace(self.config, generator_mode=requested)
         except ValueError as error:
             self.generator.eventson = False
@@ -128,6 +135,32 @@ class ScenarioEditor:
             self.figure.canvas.draw_idle()
             return
         self.config = updated
+        self._sync_backend()
+        self.draw()
+
+    def _sync_backend(self):
+        self.backend.eventson = False
+        if self.backend.get_status()[0] != (self.config.numerical_backend == 'cpp'):
+            self.backend.set_active(0)
+        self.backend.eventson = True
+        self.backend.active = self.config.coupled_flight and self.config.generator_mode != 'geometric'
+        self.backend.labels[0].set_alpha(1. if self.backend.active else .4)
+
+    def toggle_backend(self, label=None):
+        requested = 'cpp' if self.backend.get_status()[0] else 'python'
+        try:
+            updated = replace(self.config, numerical_backend=requested)
+            if requested == 'cpp':
+                from .native_backend import require_native
+                require_native()
+        except (ValueError, RuntimeError) as error:
+            self._sync_backend()
+            self.status.set_text(str(error))
+            self.status.set_color('firebrick')
+            self.figure.canvas.draw_idle()
+            return
+        self.config = updated
+        self._sync_backend()
         self.draw()
 
     def _build_selector(self):
@@ -538,6 +571,7 @@ class ScenarioEditor:
         if self.generator.get_status()[0] != (self.config.generator_mode != 'geometric'):
             self.generator.set_active(0)
         self.generator.eventson = True
+        self._sync_backend()
         self._build_selector()
         self.selected = min(self.selected, len(self.snapshots)+len(self.config.obstacles))
         self._set_field(self.activation_input, f'{self.config.activation_time:g}')
@@ -572,13 +606,22 @@ class ScenarioEditor:
 
         if not self.apply_fields() or self.initial_conflict():
             return
+        if self.config.numerical_backend == 'cpp':
+            try:
+                from .native_backend import require_native
+                require_native()
+            except RuntimeError as error:
+                self.status.set_text(str(error))
+                self.status.set_color('firebrick')
+                self.figure.canvas.draw_idle()
+                return
         if self.launch_validator is not None:
             try:
                 self.status.set_text('Computing and validating trajectories…')
                 self.figure.canvas.draw()
                 self.figure.canvas.flush_events()
                 self.launch_validator(tuple(self.snapshots), replace(self.config, target=self.target))
-            except (ValueError, OSError) as error:
+            except (ValueError, OSError, RuntimeError) as error:
                 self.status.set_text(str(error))
                 self.status.set_color('firebrick')
                 self.figure.canvas.draw_idle()

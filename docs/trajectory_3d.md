@@ -61,8 +61,8 @@ for versioned shared scenarios and the separate PX4/Gazebo workflow.
 
 The physical generator can explicitly use `--numerical-backend cpp` after
 `./scripts/build_native.sh`. Python remains the default and independent
-validator. The initial native backend covers physical candidate construction;
-shared PX4 editor scenarios continue to require Python. See the
+validator. The native backend covers physical candidate construction;
+the editor and shared PX4 scenario v3 records retain the explicit choice. See the
 [native kernel guide](native_kernel.md) for supported modes and measurements.
 
 ## Preparing drones and destination
