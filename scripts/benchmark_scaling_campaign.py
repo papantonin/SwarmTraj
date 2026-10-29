@@ -7,6 +7,7 @@ source hashes. No planner, physical limit, or acceptance criterion is changed.
 
 import argparse
 from collections import Counter
+import copy
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import gzip
@@ -180,12 +181,80 @@ def decode(job):
     return snapshots, Config(**fields)
 
 
+def replay_jobs(reference, suites, generator_mode):
+    """Copy saved inputs exactly; only the explicitly requested mode may change."""
+    jobs = copy.deepcopy([j for j in reference['jobs'] if j['suite'] in suites])
+    if not jobs or len({j['id'] for j in jobs}) != len(jobs):
+        raise ValueError('reference must contain a nonempty unique job selection')
+    if generator_mode is not None:
+        for job in jobs:
+            job['config']['generator_mode'] = generator_mode
+    return jobs
+
+
+def select_jobs(jobs, job_ids=None, planning_workers=None):
+    """Explicit subset and process-count overrides; never alter mission limits.
+
+    Dedicated serial/spawn replay pairs retain their saved worker assignments.
+    Returned records are copies, so the reference manifest remains immutable.
+    """
+    if planning_workers is not None and planning_workers < 0:
+        raise ValueError('planning_workers must be nonnegative')
+    if job_ids is not None:
+        if len(set(job_ids)) != len(job_ids) or not job_ids:
+            raise ValueError('job IDs must be nonempty and unique')
+        unknown = set(job_ids) - {j['id'] for j in jobs}
+        if unknown:
+            raise ValueError(f'unknown or excluded job IDs: {sorted(unknown)}')
+    selected = copy.deepcopy([j for j in jobs if job_ids is None or j['id'] in job_ids])
+    if planning_workers is not None:
+        for job in selected:
+            if job['suite'] != 'replay':
+                job['config']['planning_workers'] = planning_workers
+    return selected
+
+
+def unsupported_generator_configuration(job, error):
+    fields = job['config']
+    return (fields.get('generator_mode', 'geometric') in ('physical_mission', 'physical_recovery_seed')
+            and str(error) in ('physical generator_mode requires coupled 3D flight',
+                              'physical generator_mode does not support geometric passage-window fitting'))
+
+
+def record_configuration_rejection(directory, job, error):
+    """Record an actual input-validation rejection, without constructing a plan."""
+    document = {'schema': 'swarm-campaign-configuration-rejection-v1',
+        'config': job['config'], 'snapshots': job['snapshots'],
+        'status': 'unsupported_generator_configuration', 'reason': str(error),
+        'counts': [], 'search_nodes': 0, 'minimum_distance_lower_bound': None,
+        'required_distance': None, 'plans': [],
+        'planning_diagnostics': {'stage': 'configuration', 'planning_executed': False}}
+    payload = {key: document[key] for key in ('status', 'counts', 'search_nodes',
+        'minimum_distance_lower_bound', 'required_distance', 'plans')}
+    digest = hashlib.sha256(json.dumps(document, sort_keys=True, allow_nan=False).encode()).hexdigest()
+    document['sha256'] = digest
+    with gzip.open(directory / 'missions' / f'{job["id"]}.json.gz', 'xt', encoding='utf-8') as stream:
+        json.dump(document, stream, allow_nan=False)
+    record = {'type': 'result', 'id': job['id'], 'status': document['status'],
+        'reason': document['reason'], 'counts': [], 'search_nodes': 0,
+        'diagnostics': document['planning_diagnostics'], 'mission_sha256': digest,
+        'signature_sha256': hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+        'attempted': 0, 'accepted_candidates': 0, 'executions': []}
+    write_json(directory / 'completed' / f'{job["id"]}.json', record)
+
+
 def worker(directory, job_id):
     manifest = json.loads((directory / 'manifest.json').read_text())
     job = next(j for j in manifest['jobs'] if j['id'] == job_id)
-    snapshots, config = decode(job)
     if sources() != manifest['source_sha256']:
         raise RuntimeError('source changed before worker start')
+    try:
+        snapshots, config = decode(job)
+    except ValueError as error:
+        if not unsupported_generator_configuration(job, error):
+            raise
+        record_configuration_rejection(directory, job, error)
+        return
     start = perf_counter()
     result = plan_mission(snapshots, config)
     planning_s = perf_counter() - start
@@ -216,7 +285,7 @@ def worker(directory, job_id):
     write_json(directory / 'checkpoints' / f'{job_id}.json', record)
     if (manifest['execute'] and result.validated and job['suite'] == 'core'
             and job['seed'] == manifest['seeds'][0]
-            and job['family'] in ('baseline', 'obstacles', 'heterogeneous')):
+            and job['family'] in manifest.get('execution_families', ('baseline', 'obstacles', 'heterogeneous'))):
         from swarm_sim.trajectory2d.execution import simulate
         from swarm_sim.trajectory2d.perturbations import position_bias_vectors
         for profile in ('nominal', 'gust_sensor', 'outside_clock'):
@@ -330,6 +399,14 @@ def main(argv=None):
     parser.add_argument('--timeout', type=float, default=120)
     parser.add_argument('--execute', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--reference', type=Path, help='Replay saved manifest inputs instead of regenerating scenes')
+    parser.add_argument('--generator-mode', choices=('geometric', 'physical_mission', 'physical_recovery_seed'),
+                        help='Explicit generator override; all other saved mission inputs stay unchanged')
+    parser.add_argument('--planning-workers', type=int,
+                        help='Explicit catalog process override, except saved serial/spawn replay pairs')
+    parser.add_argument('--execution-families', nargs='+', choices=FAMILIES,
+                        help='Identical execution coverage can be requested for both generators')
+    parser.add_argument('--jobs', nargs='+', help='Explicit saved job IDs; subsets never qualify a default promotion')
     parser.add_argument('--worker', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     directory = args.output.resolve()
@@ -342,11 +419,12 @@ def main(argv=None):
         return 0
     if (not args.counts or any(n not in range(1, 6) for n in args.counts)
             or not args.seeds or min(args.seeds) < 0 or args.random_scenes < 0
-            or not np.isfinite(args.timeout) or args.timeout <= 0):
+            or not np.isfinite(args.timeout) or args.timeout <= 0
+            or args.planning_workers is not None and args.planning_workers < 0):
         parser.error('counts must be 1–5; seeds/scenes nonnegative; timeout positive and finite')
-    for name in ('counts', 'seeds', 'suites'):
+    for name in ('counts', 'seeds', 'suites', 'execution_families'):
         values = getattr(args, name)
-        if len(set(values)) != len(values):
+        if values is not None and len(set(values)) != len(values):
             parser.error(f'duplicate {name} are not allowed')
     if args.resume:
         manifest = json.loads((directory / 'manifest.json').read_text())
@@ -363,6 +441,19 @@ def main(argv=None):
         if args.suites != ['controls']:
             jobs = make_jobs(args.counts, args.seeds, args.random_scenes, args.suites)
             jobs.sort(key=lambda j: j['suite'] != 'controls')
+        reference = None
+        if args.reference:
+            reference = json.loads(args.reference.read_text())
+            jobs = replay_jobs(reference, args.suites, args.generator_mode)
+            args.counts, args.seeds = reference['counts'], reference['seeds']
+            args.timeout = reference['timeout_s']
+        elif args.generator_mode is not None:
+            for job in jobs:
+                job['config']['generator_mode'] = args.generator_mode
+        try:
+            jobs = select_jobs(jobs, args.jobs, args.planning_workers)
+        except ValueError as error:
+            parser.error(str(error))
         manifest = {'schema': 'swarm-scaling-campaign-v1', 'created_utc': datetime.now(timezone.utc).isoformat(),
             'source_sha256': sources(), 'python': platform.python_version(), 'numpy': np.__version__,
             'scipy': scipy.__version__, 'platform': platform.platform(), 'logical_cpus': os.cpu_count(),
@@ -372,7 +463,17 @@ def main(argv=None):
             'scope': 'coupled point-mass planner; no Gazebo/PX4; serialized jobs; no hard real-time guarantee',
             'timing_scope': 'planning_wall_s excludes imports/export/execution; process_wall_s includes all',
             'memory_scope': 'Linux ru_maxrss: parent peak and largest child peak, not simultaneous fleet RSS',
+            'execution_families': args.execution_families or (['baseline', 'obstacles', 'heterogeneous', 'rich_strict', 'grid']
+                                   if args.generator_mode in ('physical_mission', 'physical_recovery_seed')
+                                   else ['baseline', 'obstacles', 'heterogeneous']),
             'blas_threads': 1}
+        if reference is not None:
+            manifest['reference'] = {'path': str(args.reference.resolve()),
+                'sha256': hashlib.sha256(args.reference.read_bytes()).hexdigest(),
+                'generator_mode_override': args.generator_mode,
+                'planning_workers_override': args.planning_workers,
+                'job_ids': args.jobs,
+                'scope': 'same saved snapshots, mission constraints and timeout; explicit generator/process overrides only'}
         write_json(directory / 'manifest.json', manifest)
     return run(directory, manifest)
 

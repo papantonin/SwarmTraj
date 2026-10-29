@@ -99,6 +99,9 @@ def main():
                         help="Bias new proposals using sampled pair conflicts (default); none keeps unguided expansion")
     parser.add_argument("--candidate-guidance", choices=("none", "rejections"), default="none",
                         help="Use own rejection history to propose longer level settling or wider obstacle routes; validation unchanged")
+    parser.add_argument("--generator-mode", choices=("geometric", "physical_mission", "physical_recovery_seed"),
+                        default="geometric", help="Historical geometry or experimental directly integrated physical mission; "
+                        "physical_recovery_seed is a compatibility alias for physical_mission")
     parser.add_argument("--initial-candidates", type=int, default=4,
                         help="Initial catalog size and expansion batch in adaptive mode")
     parser.add_argument("--search-order", choices=("mrv", "id"), default="mrv",
@@ -269,6 +272,7 @@ def main():
                         planning_strategy=args.planning_strategy, initial_candidates=args.initial_candidates,
                         conflict_guidance=args.conflict_guidance,
                         candidate_guidance=args.candidate_guidance,
+                        generator_mode=args.generator_mode,
                         reservation_policy=args.reservation_policy, reservation_cell_size=args.reservation_cell_size,
                         reservation_max_entries=args.reservation_max_entries,
                         interval_guidance=args.interval_guidance, interval_max_constraints=args.interval_max_constraints,

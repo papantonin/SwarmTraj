@@ -72,6 +72,7 @@ class Config:
     profile_policy: str = "strict"  # Mixed families are an explicit opt-in, not a fallback.
     passage_guidance: str = "none"  # Offline intermediate-cell speed fitting, not departure retiming.
     candidate_guidance: str = "none"  # Own-rejection reference adjustments; never weaker validators.
+    generator_mode: str = "geometric"  # Opt-in direct physical missions; historical default unchanged.
     aircraft_profiles: tuple = ()  # Complete explicit (drone_id, AircraftProfile) bindings; offline only.
     aircraft_radius: float = 0.0  # Enclosing sphere; zero preserves the legacy point-aircraft model.
 
@@ -179,6 +180,12 @@ class Config:
             raise ValueError("candidate_guidance must be none or rejections")
         if self.candidate_guidance != "none" and not self.coupled_flight:
             raise ValueError("candidate guidance requires coupled 3D flight")
+        if self.generator_mode not in ("geometric", "physical_recovery_seed", "physical_mission"):
+            raise ValueError("generator_mode must be geometric, physical_mission or physical_recovery_seed")
+        if self.generator_mode != "geometric" and not self.coupled_flight:
+            raise ValueError("physical generator_mode requires coupled 3D flight")
+        if self.generator_mode != "geometric" and self.passage_guidance != "none":
+            raise ValueError("physical generator_mode does not support geometric passage-window fitting")
         if self.reservation_policy not in ("none", "grid"):
             raise ValueError("reservation_policy must be none or grid")
         if not np.isfinite(self.reservation_cell_size) or self.reservation_cell_size < 5:
@@ -271,10 +278,12 @@ class Trajectory:
     speed_reference: np.ndarray | None = None
     profile_family: str | None = None  # Only explicit mixed-policy plans carry this declaration.
     aircraft_profile: object | None = None  # Own immutable profile only, never a fleet map.
+    generation_phases: tuple = ()  # Descriptive own-plan (name, first_step, last_step) intervals.
 
     def __post_init__(self):
         # Isolate plans from caller-owned buffers and make them read-only.
         object.__setattr__(self, "cruise_levels_m", tuple(self.cruise_levels_m))
+        object.__setattr__(self, "generation_phases", tuple(tuple(p) for p in self.generation_phases))
         for name in ("states", "accelerations", "vertical_states", "vertical_accelerations", "flight_states", "flight_controls", "speed_reference"):
             if getattr(self, name) is None:
                 continue
@@ -355,6 +364,8 @@ class Trajectory:
 
     def to_dict(self):
         profiles = {}
+        if self.generation_phases:
+            profiles['generation_phases'] = [list(p) for p in self.generation_phases]
         if self.aircraft_profile is not None:
             profiles['aircraft_profile'] = self.aircraft_profile.record()
         if self.cruise_levels_m:
@@ -473,10 +484,15 @@ def _candidate(snapshot, config, candidate_id, rng, approach_angle=None, diagnos
             or not np.isfinite(routing_extra_margin) or routing_extra_margin < 0):
         return reject(diagnostics, "invalid_proposal_adjustment")
     if config.coupled_flight:
+        if config.generator_mode != "geometric":
+            from .physical_generation import physical_candidate
+            return physical_candidate(snapshot, config, candidate_id, rng, approach_angle, diagnostics,
+                                      repair_hint, repair_mode, departure_override,
+                                      level_hold_override, routing_extra_margin)
         from .coupled_planning import convert_candidate
         # The old generator proposes GEOMETRY, never a flyable 3D certificate.
         # Time dilation below restores total airspeed before physical rollout.
-        template_config = replace(config, flight_model="legacy",
+        template_config = replace(config, flight_model="legacy", generator_mode="geometric",
                                   speed_profile="constant", passage_guidance="none", candidate_guidance="none",
                                   cruise_level_hold=config.cruise_level_hold if level_hold_override is None else level_hold_override,
                                   max_vertical_acceleration=0.9 * config.max_vertical_acceleration,

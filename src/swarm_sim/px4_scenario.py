@@ -18,12 +18,13 @@ from .trajectory2d.obstacles import Obstacle
 from .trajectory2d.dynamics import holding_circle
 
 
-SCHEMA = 'swarm-px4-editor-v1'
+SCHEMA = 'swarm-px4-editor-v2'
+LEGACY_SCHEMA = 'swarm-px4-editor-v1'
 MISSION_FIELDS = ('seed', 'target', 'target_altitude', 'target_radius', 'horizon',
                   'arrival_deadline', 'post_arrival_time',
                   'activation_time', 'min_extra_loiter', 'max_extra_loiter',
                   'approach_spread_deg', 'cruise_altitude_range', 'descent_angle_deg',
-                  'obstacle_clearance', 'obstacles')
+                  'obstacle_clearance', 'obstacles', 'generator_mode')
 
 
 def default_scenario(seed=7, obstacles=()):
@@ -44,6 +45,8 @@ def validate_scenario(snapshots, config):
     snapshot = snapshots[0]
     if config.dimensions != 3 or not config.coupled_flight or config.aircraft_profiles:
         raise ValueError('Gazebo editor requires the common 3D point-mass proxy; no alternate airframe bindings.')
+    if config.generator_mode not in ('geometric', 'physical_mission'):
+        raise ValueError('Gazebo editor generator_mode must be geometric or physical_mission.')
     expected = reference_aircraft_profile().apply(Config(dimensions=3))
     if config.limits != expected.limits or config.flight != expected.flight:
         raise ValueError('PX4 uses the pinned Cessna; changing the planning airframe does not change Gazebo.')
@@ -80,11 +83,13 @@ def scenario_record(snapshots, config):
 
 def load_scenario(path):
     record = json.loads(Path(path).read_text())
+    legacy = isinstance(record, dict) and record.get('schema') == LEGACY_SCHEMA
+    allowed = set(MISSION_FIELDS) - ({'generator_mode'} if legacy else set())
     if (not isinstance(record, dict) or set(record) != {'schema', 'snapshots', 'mission'}
-            or record['schema'] != SCHEMA or not isinstance(record['snapshots'], list)
+            or record['schema'] not in (SCHEMA, LEGACY_SCHEMA) or not isinstance(record['snapshots'], list)
             or len(record['snapshots']) != 1 or not isinstance(record['mission'], dict)
-            or not set(MISSION_FIELDS)-{'arrival_deadline', 'post_arrival_time'} <= set(record['mission'])
-            or not set(record['mission']) <= set(MISSION_FIELDS)):
+            or not allowed-{'arrival_deadline', 'post_arrival_time'} <= set(record['mission'])
+            or not set(record['mission']) <= allowed):
         raise ValueError('Invalid or unsupported single-aircraft editor scenario schema.')
     try:
         fields = dict(record['snapshots'][0])
@@ -95,6 +100,9 @@ def load_scenario(path):
             raise ValueError('Snapshot requires XY, heading and yaw rate')
         snapshots = (Snapshot(**fields),)
         mission = dict(record['mission'])
+        if legacy:
+            # Retain historical meaning even if the fresh-scene default changes.
+            mission['generator_mode'] = 'geometric'
         mission['target'] = tuple(mission['target'])
         mission['obstacles'] = tuple(Obstacle(**o) for o in mission['obstacles'])
         if mission['cruise_altitude_range'] is not None:

@@ -486,10 +486,10 @@ def simulate(plans: tuple[Trajectory, ...], config: Config, clock_offsets=None,
         flight_nominal = np.stack([p.sample_flight(times) for p in plans], axis=1)
         verified = all(envelope_ok(flight_actual[:, k], flight_controls[:, k], c, tolerance=1e-5)
                        for k, c in enumerate(local_configs))
-        # Also inspect the incoming control at each switching instant.
-        switches = np.arange(1, steps + 1) * observer_substeps
-        verified &= all(envelope_ok(flight_actual[switches, k], flight_controls[switches - 1, k], c, tolerance=1e-5)
-                        for k, c in enumerate(local_configs))
+        # Exact hold-boundary records below retain BOTH incoming and outgoing
+        # controls, including asynchronous switches between observer samples.
+        # The previous sampled control need not be the actual incoming control:
+        # another local-clock update may already have happened since that sample.
         boundary_data = []
         for records, local in zip(control_boundaries, local_configs):
             boundary_times = np.array([record[0] for record in records])

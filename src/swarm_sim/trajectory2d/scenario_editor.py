@@ -44,6 +44,12 @@ class ScenarioEditor:
         self.heading_input = TextBox(self.figure.add_axes([0.85, 0.44, 0.11, 0.035]), "Heading (°) ")
         self.speed_input = TextBox(self.figure.add_axes([0.85, 0.39, 0.11, 0.035]),
                                   "Airspeed (m/s) " if config.coupled_flight else "XY speed (m/s) ")
+        self.generator = CheckButtons(self.figure.add_axes([0.08, 0.9025, 0.31, 0.025]),
+                                      ['Physical generator'], [config.generator_mode != 'geometric'])
+        self.generator.active = config.coupled_flight
+        self.generator.labels[0].set_fontsize(9)
+        self.figure.text(0.41, 0.9125, 'Off: geometric generator', fontsize=8)
+        self.generator.on_clicked(self.toggle_generator)
         self.apply_button = Button(self.figure.add_axes([0.77, 0.335, 0.19, 0.04]), "Apply")
         self.horizon_input = TextBox(self.figure.add_axes([0.19, 0.355, 0.08, 0.035]),
                                      "Horizon (s) ", initial=f"{config.horizon:g}")
@@ -107,6 +113,22 @@ class ScenarioEditor:
         self.figure.canvas.mpl_connect("button_press_event", self.click)
         self.select(0)
         self.draw(fit=True)
+
+    def toggle_generator(self, label=None):
+        requested = 'physical_mission' if self.generator.get_status()[0] else 'geometric'
+        try:
+            updated = replace(self.config, generator_mode=requested)
+        except ValueError as error:
+            self.generator.eventson = False
+            if self.generator.get_status()[0] != (self.config.generator_mode != 'geometric'):
+                self.generator.set_active(0)
+            self.generator.eventson = True
+            self.status.set_text(str(error))
+            self.status.set_color('firebrick')
+            self.figure.canvas.draw_idle()
+            return
+        self.config = updated
+        self.draw()
 
     def _build_selector(self):
         from matplotlib.widgets import RadioButtons
@@ -512,6 +534,10 @@ class ScenarioEditor:
         self.snapshots = list(self.original[0])
         self.target = self.original[1]
         self.config = self.original_config
+        self.generator.eventson = False
+        if self.generator.get_status()[0] != (self.config.generator_mode != 'geometric'):
+            self.generator.set_active(0)
+        self.generator.eventson = True
         self._build_selector()
         self.selected = min(self.selected, len(self.snapshots)+len(self.config.obstacles))
         self._set_field(self.activation_input, f'{self.config.activation_time:g}')

@@ -701,12 +701,15 @@ def main(argv=None):
     parser.add_argument('--gpu', action='store_true', help='explicitly expose only /dev/dri/renderD128 for Intel/AMD Mesa rendering; requires --run')
     parser.add_argument('--camera', choices=['free', 'follow'], help='four-aircraft GUI camera: free overview (default) or drone-0 follow')
     parser.add_argument('--seed', type=int, help='PRNG seed; default 7, or the saved scenario seed')
+    parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
+                        help='explicit scenario/editor generator override; saved v1 scenes remain geometric otherwise')
+    parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--obstacles', type=Path, help='static box/cylinder JSON shared with Matplotlib; included in planning and Gazebo collisions, not certified PX4 avoidance')
     parser.add_argument('--airborne-start', action='store_true', help='experimental warm start: normal ground readiness/arming, one-shot physical initialization at the reference start; no cold in-air boot')
     parser.add_argument('--edit-scenario', action='store_true', help='edit aircraft, target and obstacles, validate the reference, then launch Gazebo with --run')
     parser.add_argument('--end-behavior', choices=['remove-at-target', 'land'],
                         help='editor/scenario default: remove-at-target; historical benchmark default: land')
-    parser.add_argument('--scenario', type=Path, help='load single-aircraft scenario JSON, or fleet-v1 JSON with --num-drones 4; implies airborne start')
+    parser.add_argument('--scenario', type=Path, help='load single-aircraft or fleet-v1/v2 JSON with --num-drones 4; implies airborne start')
     parser.add_argument('--timeout', type=float, default=600., help='wall seconds for startup, reference and selected completion, not the planning horizon')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--worker', type=Path, help=argparse.SUPPRESS)
@@ -718,6 +721,8 @@ def main(argv=None):
         parser.error('--camera currently applies to --num-drones 4')
     if (args.seed is not None and args.seed < 0) or not math.isfinite(args.timeout) or not 30 <= args.timeout <= 1800:
         parser.error('nonnegative seed and timeout within 30..1800 seconds required')
+    if args.workers is not None and args.workers < 0:
+        parser.error('workers must be nonnegative')
     if args.worker:
         return execute_worker(args.worker, args.timeout)
     if args.gui and not args.run:
@@ -740,6 +745,16 @@ def main(argv=None):
         if args.scenario and args.seed is not None:
             from dataclasses import replace
             scenario = (scenario[0], replace(scenario[1], seed=seed))
+        if (args.generator_mode is not None or args.workers is not None) and scenario is None:
+            raise ValueError('generator-mode/workers require --scenario or --edit-scenario; historical bench is unchanged')
+        if scenario is not None:
+            from dataclasses import replace
+            overrides = {}
+            if args.generator_mode is not None:
+                overrides['generator_mode'] = args.generator_mode
+            if args.workers is not None:
+                overrides['planning_workers'] = args.workers
+            scenario = scenario[0], replace(scenario[1], **overrides)
         prepared = []
         def prepare_edited(snapshots, config):
             validate_scenario(snapshots, config)

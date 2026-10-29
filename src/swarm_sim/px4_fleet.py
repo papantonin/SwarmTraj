@@ -26,7 +26,8 @@ from .trajectory2d.obstacles import Obstacle, load_obstacles
 from .trajectory2d.planning import mission_document
 from .px4_termination import end_behavior, with_end_behavior, flight_reference
 
-SCHEMA = 'swarm-px4-editor-fleet-v1'
+SCHEMA = 'swarm-px4-editor-fleet-v2'
+LEGACY_SCHEMA = 'swarm-px4-editor-fleet-v1'
 COUNT = 4
 
 
@@ -61,13 +62,18 @@ def fleet_record(snapshots, config):
 def load_fleet(path):
     record = json.loads(Path(path).read_text())
     fields = set(MISSION_FIELDS)|{'separation'}
+    legacy = isinstance(record, dict) and record.get('schema') == LEGACY_SCHEMA
+    if legacy:
+        fields.remove('generator_mode')
     if (not isinstance(record, dict) or set(record) != {'schema', 'snapshots', 'mission'}
-            or record['schema'] != SCHEMA or not isinstance(record['snapshots'], list)
+            or record['schema'] not in (SCHEMA, LEGACY_SCHEMA) or not isinstance(record['snapshots'], list)
             or not isinstance(record['mission'], dict) or set(record['mission']) != fields):
-        raise ValueError('Expected swarm-px4-editor-fleet-v1 JSON, not a single-aircraft scene.')
+        raise ValueError('Expected swarm-px4-editor-fleet-v1/v2 JSON, not a single-aircraft scene.')
     try:
         snapshots = tuple(Snapshot(**{**s, 'state': tuple(s['state'])}) for s in record['snapshots'])
         settings = dict(record['mission'])
+        if legacy:
+            settings['generator_mode'] = 'geometric'
         settings['target'] = tuple(settings['target'])
         settings['obstacles'] = tuple(Obstacle(**o) for o in settings['obstacles'])
         if settings['cruise_altitude_range'] is not None:
@@ -308,6 +314,9 @@ def main(argv=None):
     parser.add_argument('--scenario', type=Path)
     parser.add_argument('--obstacles', type=Path)
     parser.add_argument('--seed', type=int)
+    parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
+                        help='explicit generator override; saved v1 scenes remain geometric otherwise')
+    parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--timeout', type=float, default=1200)
     parser.add_argument('--output', type=Path)
     parser.add_argument('--worker', type=Path, help=argparse.SUPPRESS)
@@ -316,6 +325,8 @@ def main(argv=None):
         return worker(args.worker, args.timeout)
     if not math.isfinite(args.timeout) or not 30 <= args.timeout <= 1800:
         parser.error('timeout must be within 30..1800 seconds')
+    if args.workers is not None and args.workers < 0:
+        parser.error('workers must be nonnegative')
     if (args.gui or args.gpu) and not args.run:
         parser.error('gui/gpu require --run')
     if args.scenario and args.obstacles:
@@ -328,6 +339,13 @@ def main(argv=None):
             19 if args.seed is None else args.seed, load_obstacles(args.obstacles) if args.obstacles else ())
         if args.seed is not None:
             scenario = scenario[0], replace(scenario[1], seed=args.seed)
+        overrides = {}
+        if args.generator_mode is not None:
+            overrides['generator_mode'] = args.generator_mode
+        if args.workers is not None:
+            overrides['planning_workers'] = args.workers
+        if overrides:
+            scenario = scenario[0], replace(scenario[1], **overrides)
         prepared = []
         def prepare(snapshots, config):
             prepared[:] = [prepare_fleet(snapshots, config, args.end_behavior)]

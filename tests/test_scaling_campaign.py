@@ -96,3 +96,142 @@ def test_resume_skips_recorded_jobs_and_source_changes_abort(campaign, monkeypat
     monkeypatch.setattr(campaign, 'sources', lambda: {'changed': 'yes'})
     with pytest.raises(RuntimeError, match='source changed'):
         campaign.run(tmp_path, manifest)
+
+
+def test_reference_replay_changes_only_generator_and_supports_all_230_requests(campaign):
+    reference = {'jobs': campaign.make_jobs([1, 2, 3, 4, 5], [7, 19, 42], 10,
+                                            ['controls', 'core', 'random', 'replay'])}
+    before = json.dumps(reference, sort_keys=True)
+    replay = campaign.replay_jobs(reference, ['core', 'random'], 'physical_mission')
+    assert len(replay) == 230
+    assert sum(j['family'] == 'rich_strict' for j in replay) == 15
+    originals = {j['id']: j for j in reference['jobs']}
+    for job in replay:
+        original = originals[job['id']]
+        assert {k: v for k, v in job.items() if k != 'config'} == {
+            k: v for k, v in original.items() if k != 'config'}
+        assert {k: v for k, v in job['config'].items() if k != 'generator_mode'} == {
+            k: v for k, v in original['config'].items() if k != 'generator_mode'}
+        snapshots, config = campaign.decode(job)
+        assert config.generator_mode == 'physical_mission' and len(snapshots) == job['num_drones']
+    assert json.dumps(reference, sort_keys=True) == before
+
+
+def test_worker_records_unsupported_without_planning_and_artifact_audits(campaign, monkeypatch, tmp_path):
+    reporter = importlib.import_module('report_scaling_campaign')
+    jobs = campaign.make_jobs([1], [7], 0, ['core'])
+    job = next(j for j in jobs if j['family'] == 'rich_strict')
+    job['config']['generator_mode'] = 'physical_mission'
+    job['config']['passage_guidance'] = 'safe_windows'
+    job['config']['reservation_policy'] = 'grid'
+    manifest = {'jobs': [job], 'source_sha256': campaign.sources()}
+    campaign.write_json(tmp_path / 'manifest.json', manifest)
+    for folder in ('missions', 'completed'):
+        (tmp_path / folder).mkdir()
+    monkeypatch.setattr(campaign, 'plan_mission', lambda *a: pytest.fail('must reject before planning'))
+    campaign.worker(tmp_path, job['id'])
+    row = json.loads((tmp_path / 'completed' / (job['id']+'.json')).read_text())
+    row['num_drones'] = 1
+    assert row['status'] == 'unsupported_generator_configuration'
+    assert row['attempted'] == 0 and not row['executions']
+    assert not row['diagnostics']['planning_executed']
+    assert reporter.audit(tmp_path, manifest, [row])['errors'] == []
+
+
+def test_worker_does_not_mask_unexpected_configuration_errors(campaign, monkeypatch, tmp_path):
+    job = next(j for j in campaign.make_jobs([1], [7], 0, ['core']) if j['family'] == 'rich_strict')
+    job['config']['generator_mode'] = 'physical_mission'
+    campaign.write_json(tmp_path / 'manifest.json', {'jobs': [job], 'source_sha256': campaign.sources()})
+    def fail(_):
+        raise ValueError('unexpected input corruption')
+    monkeypatch.setattr(campaign, 'decode', fail)
+    with pytest.raises(ValueError, match='unexpected input corruption'):
+        campaign.worker(tmp_path, job['id'])
+
+
+def test_generator_comparison_retains_regressions_timeouts_and_unsupported(campaign):
+    reporter = importlib.import_module('report_generator_replay')
+    old = [{'id': str(i), 'status': status, 'completion': 'complete'} for i, status in enumerate(
+        ('validated', 'no_candidate', 'validated', 'validated', 'validated'))]
+    new = [{'id': str(i), 'status': status, 'completion': completion, 'suite': 'core',
+            'family': 'baseline', 'num_drones': 1} for i, (status, completion) in enumerate((
+                ('validated', 'complete'), ('validated', 'complete'), ('no_candidate', 'complete'),
+                (None, 'planning_timeout'), ('unsupported_generator_configuration', 'complete')))]
+    comparison = reporter.compare(old, new)
+    assert [c['outcome'] for c in comparison] == ['retained', 'gained', 'lost', 'lost', 'lost']
+    assert comparison[3]['new_status'] == 'planning_timeout'
+    assert comparison[4]['new_status'] == 'unsupported_generator_configuration'
+
+
+def test_replay_report_detects_safety_and_snapshot_changes(campaign):
+    reporter = importlib.import_module('report_generator_replay')
+    original = campaign.make_jobs([1], [7], 0, ['core'])[0]
+    job, = campaign.replay_jobs({'jobs': [original]}, ['core'], 'physical_mission')
+    assert reporter.input_differences(job, original) == []
+    job['config']['position_error'] = 0
+    job['snapshots'][0]['speed'] += 1
+    assert len(reporter.input_differences(job, original)) == 2
+
+
+def test_explicit_process_override_preserves_replay_pairs_and_safety(campaign):
+    reporter = importlib.import_module('report_generator_replay')
+    original = campaign.make_jobs([2], [7], 0, ['core', 'replay'])
+    before = json.dumps(original, sort_keys=True)
+    chosen = [original[0]['id'], *(j['id'] for j in original if j['suite'] == 'replay')]
+    jobs = campaign.select_jobs(original, chosen, 2)
+    assert len(jobs) == 3
+    assert [j['config']['planning_workers'] for j in jobs] == [2, 1, 2]
+    assert json.dumps(original, sort_keys=True) == before
+    assert reporter.input_differences(jobs[0], original[0])
+    assert not reporter.input_differences(jobs[0], original[0], 2)
+    assert reporter.input_differences(jobs[0], original[0], 1)
+    assert reporter.input_differences(jobs[0], original[0], 2, 'physical_mission')
+    jobs[0]['config']['position_error'] = 0
+    assert reporter.input_differences(jobs[0], original[0], 2)
+    for identifiers in ([], ['unknown'], [chosen[0], chosen[0]]):
+        with pytest.raises(ValueError):
+            campaign.select_jobs(original, identifiers, 2)
+    with pytest.raises(ValueError):
+        campaign.select_jobs(original, planning_workers=-1)
+
+
+def test_live_progress_does_not_present_partial_campaign_as_validated(campaign):
+    reporter = importlib.import_module('report_generator_replay')
+    manifest = {'jobs': list(range(259)), 'timeout_s': 120}
+    rows = [{'suite': 'core', 'status': 'validated', 'completion': 'complete'},
+            {'suite': 'controls', 'status': 'invalid_initial_state', 'completion': 'complete',
+             'expectation_met': True}]
+    html = reporter.progress_html(manifest, rows)
+    assert '1/230' in html and '2/259' in html
+    assert 'provisional progress' in html and 'Default remains geometric' in html
+    assert 'Unsupported configuration requests' in html
+
+
+def test_duplicate_execution_cannot_hide_missing_profile_or_job(campaign):
+    reporter = importlib.import_module('report_generator_replay')
+    manifest = {'seeds': [7], 'execute': True, 'execution_families': ['baseline', 'rich_strict']}
+    rows = [{'id': family, 'suite': 'core', 'family': family, 'seed': 7, 'status': 'validated',
+             'completion': 'complete', 'executions': [{'profile': profile} for profile in
+                 ('nominal', 'gust_sensor', 'outside_clock')]}
+            for family in ('baseline', 'rich_strict')]
+    assert reporter.execution_coverage(manifest, rows)['complete']
+    # The aggregate remains six trials, but one duplicated nominal run must
+    # never stand in for the missing rich-profile gust execution.
+    rows[1]['executions'][1] = {'profile': 'nominal'}
+    coverage = reporter.execution_coverage(manifest, rows)
+    assert coverage['recorded_trials'] == coverage['expected_trials'] == 6
+    assert not coverage['complete']
+    assert coverage['missing_trials'] == [{'id': 'rich_strict', 'profile': 'gust_sensor'}]
+    assert coverage['duplicate_trials'] == [{'id': 'rich_strict', 'profile': 'nominal'}]
+
+
+def test_execution_coverage_rejects_disabled_or_unexpected_trials(campaign):
+    reporter = importlib.import_module('report_generator_replay')
+    manifest = {'seeds': [7], 'execute': False}
+    assert not reporter.execution_coverage(manifest, [])['complete']
+    manifest['execute'] = True
+    row = {'id': 'rejected', 'suite': 'core', 'family': 'baseline', 'seed': 7,
+           'status': 'no_candidate', 'executions': [{'profile': 'nominal'}]}
+    coverage = reporter.execution_coverage(manifest, [row])
+    assert not coverage['complete']
+    assert coverage['unexpected_trials'] == [{'id': 'rejected', 'profile': 'nominal'}]

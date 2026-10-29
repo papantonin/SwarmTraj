@@ -29,6 +29,10 @@ missions do not inherit the planner's timing or separation claims.
 - [Free departure windows and richer profiles](free_windows_profiles.md)
 - [Explicit mixed-profile policy](mixed_profiles.md)
 - [Intermediate-cell passage guidance](intermediate_passages.md)
+- [Physical recovery primitives and direct individual mission construction](phase2_kinodynamic.md)
+- [Generator migration and validation gates](generator_migration.md)
+- [CPU/memory audit and Git checkpoint before C++](cpp_readiness.md)
+- [Current planning and execution architecture](architecture.md)
 
 ## Measurements and validation
 

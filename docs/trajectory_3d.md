@@ -47,6 +47,18 @@ proposals from their own rejection history; see the
 
 Interface labels and runtime messages are in English.
 
+An experimental `--generator-mode physical_mission` constructs complete
+individual missions directly through the coupled physical model, including an
+explicit recovery primitive from the actual passage state. It supports one to
+three cruise levels and constant or smooth airspeed references, including strict
+and explicitly declared mixed profiles. Geometric intermediate-passage fitting
+is unsupported and rejected explicitly. The historical `geometric` mode remains
+the default.
+See [physical construction, scope and verification](phase2_kinodynamic.md).
+The editor's **Physical generator** checkbox selects the same mode; it is
+disabled for planar/legacy flight. See the [migration guide](generator_migration.md)
+for versioned shared scenarios and the separate PX4/Gazebo workflow.
+
 ## Preparing drones and destination
 
 The preparation map remains an XY projection: select a drone, then click on

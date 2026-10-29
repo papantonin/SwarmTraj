@@ -29,7 +29,12 @@ including all four geometric return screens. See the
 [trajectory-only completion details](gazebo_editor.md#trajectory-only-completion-default-for-editedsaved-scenarios)
 for the simulation-specific mission requirement and unchanged planner scope.
 Closing it cancels without starting the simulator. The scenario schema is
-`swarm-px4-editor-fleet-v1`; single-aircraft JSON is intentionally not silently
+`swarm-px4-editor-fleet-v2`, with an explicit `mission.generator_mode`.
+Legacy fleet-v1 files remain readable and select `geometric` unless explicitly
+overridden with `--generator-mode physical_mission` before editing/planning.
+The editor checkbox offers the same choice; `--workers 1|2|0` configures catalog
+processes (serial, two, or automatic). These settings do not alter PX4 instance
+isolation or the native flight gates. Single-aircraft JSON is intentionally not silently
 converted into four coincident aircraft. IDs must be exactly 0, 1, 2, 3.
 Ground spawn XY points must be at least 30 m apart even if flight altitudes
 differ, because the warm bootstrap first initializes all aircraft on the ground.

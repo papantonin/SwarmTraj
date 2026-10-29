@@ -4,6 +4,11 @@ The new features are opt-in. With them disabled, the historical single-level,
 constant-setpoint candidate stream is retained. Four-aircraft tests compare
 serial/spawn generation, immutable payloads, full-horizon reservations, physical
 execution and actual attainment of the requested levels.
+These requirements also apply to the opt-in
+[`physical_mission` generator](phase2_kinodynamic.md), which constructs level
+transitions and a real-clock speed bump directly through physical controls.
+The geometric construction and retiming described below remain the historical
+generator's implementation; they are not used by physical construction.
 The default profile policy remains strict. The explicit
 [mixed-profile policy](mixed_profiles.md) instead permits simple and rich families
 within one adaptive catalog; its level count is a maximum, not a requirement.

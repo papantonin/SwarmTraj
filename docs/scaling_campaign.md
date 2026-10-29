@@ -121,6 +121,52 @@ negative controls are reported separately from exploratory success rates.
 Exceptions stop the campaign after the failing worker's evidence is retained;
 partial worker output is never accepted as a successful mission.
 
+## Comparing physical and geometric generators
+
+Replay saved inputs rather than regenerating scenes when comparing the opt-in
+[`physical_mission` generator](phase2_kinodynamic.md) with the historical results:
+
+```bash
+.venv/bin/python scripts/benchmark_scaling_campaign.py \
+  --reference results/scaling-campaign-20261028/manifest.json \
+  --suites controls core random replay --generator-mode physical_mission \
+  --output results/physical-generator-comparison
+
+.venv/bin/python scripts/report_generator_replay.py \
+  results/physical-generator-comparison
+```
+
+This selects 259 jobs: 230 exploratory missions, 19 negative controls and ten
+serial/spawn repeats. Only the generator mode changes in the saved mission
+inputs; snapshots, seeds, limits, margins, candidate/search budgets and the
+original per-process timeout remain fixed. Physical replays also request
+execution of accepted strict-rich and grid jobs at the first core seed, in
+addition to baseline, obstacles and heterogeneous speed. This means at most
+75 execution trials, inside the same worker timeout. The manifest records this
+extended execution coverage; planning and execution outcomes remain separate.
+
+The comparison reporter audits original artifact hashes and inputs, then
+independently revalidates saved individual plans, full-horizon pair distances,
+reservations and physical pull-out connections. Negative checks corrupt final
+commands and place obstacles at post-arrival endpoints. These numerical checks
+are separate from journal consistency and do not certify integration error.
+The report lists retained, gained and lost planning successes, worker completion
+status, and every missing, duplicated or unexpected execution job/profile.
+
+`analysis/index.html`, `generator-comparison.json` and `completion.json`
+supplement the standard PDF/CSV reports. A successfully generated report does
+not mean that the new generator is suitable as the default. Its promotion
+decision also requires complete coverage, no lost historical successes, all
+negative controls and exact spawn comparisons, complete execution profiles
+with matching expectations, and no unresolved timeouts or revalidation errors.
+The default remains `geometric`; the reporter never changes it.
+
+See the [completed saved-input comparison](phase2_kinodynamic.md#completed-saved-input-comparison)
+for the historical measured outcomes, hardware, execution coverage and censored
+jobs. The subsequent [migration checks](generator_migration.md) complete those
+five inputs below the same timeout and compare one/two-process variants on an
+explicit subset; they do not replace the full historical journal.
+
 ## Reproduction and artifacts
 
 The immutable `manifest.json` contains all requested jobs, complete effective

@@ -129,6 +129,17 @@ and maximum absolute vertical acceleration are reported. The existing envelope
 thresholds and 1-degree descent-angle tolerance are retained. RK4 and sampled
 protection have no certified integration/interval error bound.
 
+The observer pairs each switch state with the incoming and outgoing controls
+recorded at that exact hold boundary. A previous observer-grid sample can
+precede an intervening local-clock update and therefore carry an older control.
+Pairing that older control with a later state produced a reproducible false
+vertical-acceleration rejection in a five-aircraft gust trial. The redundant
+stale pairing has been removed; all exact boundary records remain checked.
+Separate negative regressions inject an unsafe incoming or outgoing command at
+a switch between samples and require physical rejection. Replaying the saved
+gust trial before/after this observer correction gives bit-identical times,
+simulated states and references; only the erroneous acceptance flags change.
+
 ## Four-drone validation campaign
 
 ```bash

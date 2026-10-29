@@ -54,14 +54,24 @@ def air_velocity(state):
 def derivative(state, control, flight, wind=(0.0, 0.0, 0.0)):
     s, u = np.asarray(state), np.asarray(control)
     v, gamma, bank = s[..., 3], s[..., 5], s[..., 6]
-    thrust, brake, load, roll = np.moveaxis(u, -1, 0)
-    velocity = air_velocity(s) + np.asarray(wind)
-    return np.concatenate((velocity, np.stack((
-        thrust - brake - flight.drag(v, load) - G * np.sin(gamma),
-        G * load * np.sin(bank) / (v * np.cos(gamma)),
-        G * (load * np.cos(bank) - np.cos(gamma)) / v,
-        np.broadcast_to(roll, np.shape(v)),
-    ), axis=-1)), axis=-1)
+    thrust, brake, load, roll = (u[..., k] for k in range(4))
+    wind = np.asarray(wind)
+    shape = (s.shape[:-1] if u.ndim == wind.ndim == 1 else
+             np.broadcast_shapes(s.shape[:-1], u.shape[:-1], wind.shape[:-1]))
+    result = np.empty((*shape, 7), dtype=float)
+    # Avoid moveaxis/stack/broadcast allocations in every dense RK4 evaluation.
+    # Keep the historical arithmetic order and all integration/checking points.
+    cosine = np.cos(gamma)
+    sine = np.sin(gamma)
+    horizontal = v * cosine
+    result[..., 0] = horizontal * np.cos(s[..., 4]) + wind[..., 0]
+    result[..., 1] = horizontal * np.sin(s[..., 4]) + wind[..., 1]
+    result[..., 2] = v * sine + wind[..., 2]
+    result[..., 3] = thrust - brake - flight.drag(v, load) - G * sine
+    result[..., 4] = G * load * np.sin(bank) / (v * cosine)
+    result[..., 5] = G * (load * np.cos(bank) - cosine) / v
+    result[..., 6] = roll
+    return result
 
 
 def _scalar_derivative(s, u, flight, wind):
@@ -128,14 +138,15 @@ def envelope_ok(states, controls, config, tolerance=1e-7):
         return False
     d = derivative(s, u, f)
     az = d[..., 3] * np.sin(s[..., 5]) + s[..., 3] * np.cos(s[..., 5]) * d[..., 5]
+    vertical_velocity = s[..., 3] * np.sin(s[..., 5])
     eps = tolerance
     return bool(
         s[..., 3].min() >= lim.min_speed - eps and s[..., 3].max() <= lim.max_speed + eps
         and np.abs(s[..., 6]).max() <= np.deg2rad(lim.max_bank_deg) + eps
         and np.abs(s[..., 5]).max() <= np.deg2rad(f.max_flight_path_deg) + eps
         and s[..., 2].min() >= config.min_altitude - eps and s[..., 2].max() <= config.max_altitude + eps
-        and air_velocity(s)[..., 2].max() <= config.max_climb_rate + eps
-        and air_velocity(s)[..., 2].min() >= -config.descent_rate_limit - eps
+        and vertical_velocity.max() <= config.max_climb_rate + eps
+        and vertical_velocity.min() >= -config.descent_rate_limit - eps
         and np.abs(az).max() <= config.max_vertical_acceleration + eps
         and np.abs(d[..., 5]).max() <= np.deg2rad(f.max_flight_path_rate_deg_s) + eps
         and np.all(u[..., 0] >= -eps) and np.all(u[..., 0] <= f.max_thrust_acceleration + eps)

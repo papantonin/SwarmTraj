@@ -37,6 +37,21 @@ do not combine it with `--obstacles`. `--seed` overrides a saved seed only when
 explicitly supplied. A shared scenario implies the warm airborne-start mode.
 The historical benchmark without either editor/scenario option remains available.
 
+`--generator-mode physical_mission` explicitly selects direct physical reference
+construction; `--generator-mode geometric` selects the historical proposal
+builder. The editor's **Physical generator** checkbox changes the same setting.
+Both paths use the independent full-horizon physical/obstacle/joint validators.
+`--workers 1` builds catalogs serially; `--workers 2` uses spawn processes;
+`--workers 0` selects available CPUs. These overrides apply before the editor
+opens, and do not change physical limits or the native PX4 controller.
+
+New saved scenarios use `swarm-px4-editor-v2` with a required
+`mission.generator_mode`. Existing v1 files remain readable and explicitly mean
+`geometric`, even if fresh-scene defaults change later. A mode field in a v1
+record is rejected; save it as v2. The standalone historical benchmark without
+an edited/saved scene does not accept generator/process overrides.
+See the [migration gates and example commands](generator_migration.md).
+
 ## Editing
 
 ### Trajectory-only completion (default for edited/saved scenarios)
@@ -157,7 +172,8 @@ scenario.json: snapshot + mission inputs + obstacle solids
          → warm airborne initialization → native loiter → reference waypoints
 ```
 
-The versioned `swarm-px4-editor-v1` JSON is intentionally strict. Snapshot
+The versioned `swarm-px4-editor-v2` JSON is intentionally strict (v1 remains
+readable with its historical geometric mode). Snapshot
 `state` is `[x, y, heading_radians, signed_yaw_rate_rad_s]`; `speed` is m/s,
 altitudes and all obstacle dimensions are metres. A positive yaw rate is a
 counter-clockwise turn; `radius = speed / abs(yaw_rate)`. Mission keys use the
