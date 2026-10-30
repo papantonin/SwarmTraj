@@ -6,10 +6,10 @@ Coordinated 3D trajectory planning for fixed-wing UAV swarms.
 ![3D planning](https://img.shields.io/badge/Planning-3D-0f766e)
 ![PX4 / Gazebo SITL](https://img.shields.io/badge/PX4%20%2F%20Gazebo-SITL-7c3aed)
 
-![Four aircraft and their planned and executed 3D trajectories](docs/images/simulation-3d.png)
+![Four-aircraft PX4/Gazebo scene with planned spatial references and static obstacles](docs/images/gazebo.png)
 
-*Four-aircraft point-mass simulation. Solid lines show executed paths; dashed
-lines show planned paths. Aircraft markers show the state at 30 s.*
+*Native PX4/Gazebo SITL overview of a four-aircraft scenario. Colored lines
+show planned spatial references; grey solids are simulated obstacles.*
 
 ## Overview
 
@@ -34,10 +34,10 @@ planner, with a separate adapter for PX4/Gazebo SITL experiments.
 - **PX4 / Gazebo SITL** — isolated single-aircraft and four-aircraft experiments
   with native autopilots and aerodynamic simulation.
 
-![SwarmTraj mission editor showing four aircraft and a shared target](docs/images/planner.png)
+![Gazebo mission preparation showing four aircraft, a shared target and three obstacles](docs/images/planner.png)
 
-*Prepare the same mission in the Python editor. Mission view shows essential
-inputs; Advanced groups detailed settings while preserving configured constraints.*
+*Prepare the four-aircraft example in the Python editor. Mission view shows
+essential inputs; Advanced groups detailed settings while preserving constraints.*
 
 ## Quick start
 
