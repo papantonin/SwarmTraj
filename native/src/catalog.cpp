@@ -1,6 +1,7 @@
 #include "swarmtraj/planning.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <stdexcept>
 
 namespace swarmtraj {
@@ -26,6 +27,19 @@ Value window_record(const DepartureWindows& w) {
     Value::Array intervals;for(auto x:w.intervals)intervals.push_back(array({x[0],x[1]}));
     return object({{"parent_candidate_id",w.parent},{"reference_drone_ids",values(w.references)},
         {"intervals_s",intervals},{"constraints",w.constraints},{"budget_exhausted",w.exhausted}});
+}
+ValidationResult validate_individual(const Candidate& path,const Designation& snapshot,const PlanningSettings& config) {
+    if(path.drone_id!=snapshot.drone_id)return {"validation_drone_id",{}};
+    auto resolved=config;
+    if(config.mixed) {
+        const auto menu=families(config);const auto found=std::find_if(menu.begin(),menu.end(),[&](const auto& f){return f.name==path.family;});
+        if(found==menu.end())return {"validation_profile_family",{}};
+        resolved.mixed=false;resolved.cruise_levels=found->levels;resolved.smooth_speed=found->speed;
+    } else if(!path.family.empty())return {"validation_profile_family",{}};
+    if(!std::isfinite(path.arrival)||path.arrival<path.release||path.arrival>resolved.latest_arrival+1e-9)
+        return {"arrival_timing",{},config.deadline&&path.arrival+config.clock_error>*config.deadline?"arrival_deadline_exceeded":"post_arrival_window_exceeds_horizon"};
+    if(path.dt!=resolved.physics.dt||path.projected.size()!=resolved.steps+1||path.acceleration.size()!=resolved.steps)return {"plan_horizon",{}};
+    return validate_candidate(path,snapshot.initial,snapshot.yaw_rate,snapshot.cruise,resolved);
 }
 void extend_catalog(Catalog& catalog,const Designation& snapshot,const PlanningSettings& c,std::size_t goal,
     std::optional<double> approach,const Repair* repair,const DepartureWindows* windows,const std::string& expansion) {
@@ -86,10 +100,10 @@ void extend_catalog(Catalog& catalog,const Designation& snapshot,const PlanningS
             guided?repair:nullptr,mode,departure,hold,extra);
         if(proposal.plan&&c.mixed)proposal.plan->family=family_name;
         catalog.generation_s+=elapsed(generation_start);++catalog.attempted;++batch_attempt;
-        std::string reason=proposal.rejection;
+        std::string reason=proposal.rejection,detail;
         if(proposal.plan) {
-            const auto validation_start=Clock::now();const auto validation=validate_candidate(*proposal.plan,snapshot.initial,snapshot.yaw_rate,snapshot.cruise,proposal_config);
-            catalog.validation_s+=elapsed(validation_start);reason=validation.rejection;
+            const auto validation_start=Clock::now();const auto validation=validate_individual(*proposal.plan,snapshot,c);
+            catalog.validation_s+=elapsed(validation_start);reason=validation.rejection;detail=validation.detail;
             if(validation.accepted()) {
                 catalog.profile_failures=0;
                 for(auto* item:{profile,guided,timed,adjustment})if(item)(*item)["accepted"]=true;
@@ -99,7 +113,7 @@ void extend_catalog(Catalog& catalog,const Designation& snapshot,const PlanningS
         if(reason.empty())reason=proposal.plan?"individual_validation":"proposal_rejected";
         if(adjustment)(*adjustment)["rejection"]=reason;
         if(c.mixed){++catalog.profile_failures;if(catalog.profile_failures>=std::max<std::size_t>(2,c.initial_candidates))unlock("consecutive_rejections");}
-        ++catalog.rejections[reason];++catalog.details[reason];
+        ++catalog.rejections[reason];++catalog.details[detail.empty()?reason:detail];
     }
     catalog.rng=rng.state();
 }

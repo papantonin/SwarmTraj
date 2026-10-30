@@ -37,7 +37,7 @@ struct PlanningSettings:ValidationSettings {
     std::vector<std::uint32_t> seed{7};
     std::size_t candidates=28, attempts=90, initial_candidates=4, max_nodes=30000;
     std::size_t margin_nodes=2000, margin_rounds=1, max_entries=1000000, max_constraints=50000;
-    double separation=8.,detour=45.,level_hold=3.,cell_size=20.,post_arrival=5.;
+    double separation=8.,detour=45.,level_hold=3.,cell_size=20.,post_arrival=5.,horizon=90.,max_path_degrees=45.;
     std::optional<double> deadline;
     bool spatial=false,adaptive=false,mrv=false,max_margin=false,witnesses=false;
     bool reservations=false,windows=false,mixed=false,rejection_feedback=false,id_approach=false;
@@ -75,6 +75,7 @@ struct ProposalResult {
 };
 Value witness_record(const Witness&);
 Value window_record(const DepartureWindows&);
+ValidationResult validate_individual(const Candidate&,const Designation&,const PlanningSettings&);
 std::vector<Point> avoidance_route(Point start,const std::vector<Point>& waypoints,
     const PlanningSettings&,double speed,long long candidate_id);
 ProposalResult physical_proposal(const Designation&,const PlanningSettings&,long long candidate_id,

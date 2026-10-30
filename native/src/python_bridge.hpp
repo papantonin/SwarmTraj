@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <limits>
 
 namespace swarmtraj::bridge {
 inline PyObject* get(PyObject* d,const char* key) {
@@ -24,7 +25,7 @@ inline long long integer(PyObject* obj) {
     auto value=PyLong_AsLongLong(obj);if(PyErr_Occurred())throw std::invalid_argument("integer out of range");return value;
 }
 inline std::size_t size(PyObject* obj) {
-    const auto value=integer(obj);if(value<0||value>1000000)throw std::invalid_argument("size outside 0..1000000");return value;
+    const auto value=integer(obj);if(value<0)throw std::invalid_argument("negative size");return static_cast<std::size_t>(value);
 }
 inline bool boolean(PyObject* obj) {
     if(!PyBool_Check(obj))throw std::invalid_argument("expected boolean");return obj==Py_True;
@@ -33,6 +34,17 @@ inline std::string string(PyObject* obj) {
     if(!PyUnicode_Check(obj))throw std::invalid_argument("expected string");
     const char* value=PyUnicode_AsUTF8(obj);if(!value)throw std::invalid_argument("invalid string");return value;
 }
+inline PyObject* item(PyObject* sequence,Py_ssize_t index) {
+    if(PyList_Check(sequence))return PyList_GetItem(sequence,index);
+    if(PyTuple_Check(sequence))return PyTuple_GetItem(sequence,index);
+    throw std::invalid_argument("expected list or tuple");
+}
+struct Owned {
+    PyObject* object=nullptr;
+    explicit Owned(PyObject* p):object(p){}
+    ~Owned(){Py_XDECREF(object);}
+    PyObject* release(){auto* p=object;object=nullptr;return p;}
+};
 struct Buffer {
     Py_buffer value{};
     explicit Buffer(PyObject* obj) {
@@ -71,6 +83,7 @@ inline Parameters physics(PyObject* obj) {
 inline Candidate candidate(PyObject* d) {
     Candidate c;c.drone_id=integer(get(d,"drone_id"));c.candidate_id=integer(get(d,"candidate_id"));
     c.speed=real(d,"speed",false);c.dt=real(d,"dt",false);c.release=real(d,"release",false);c.arrival=real(d,"arrival",false);
+    c.max_speed=real(d,"airspeed_limit",false);
     c.cruise=optional_number(get(d,"cruise"),false);c.approach=optional_number(get(d,"approach"),false);
     c.states=matrix<7>(get(d,"states"),false);c.controls=matrix<4>(get(d,"controls"),false);
     c.projected=matrix<6>(get(d,"projected"),false);c.acceleration=series(get(d,"acceleration"),false);
@@ -82,9 +95,9 @@ inline Candidate candidate(PyObject* d) {
     if(auto* phases=PyDict_GetItemString(d,"phases")) {
         if(!PyList_Check(phases)&&!PyTuple_Check(phases))throw std::invalid_argument("invalid phase list");
         for(Py_ssize_t k=0;k<PySequence_Size(phases);++k) {
-            auto* phase=PySequence_GetItem(phases,k);
-            if(!phase||!PyTuple_Check(phase)||PyTuple_Size(phase)!=3){Py_XDECREF(phase);throw std::invalid_argument("invalid phase");}
-            c.phases.push_back({string(PyTuple_GetItem(phase,0)),size(PyTuple_GetItem(phase,1)),size(PyTuple_GetItem(phase,2))});Py_DECREF(phase);
+            auto* phase=item(phases,k);
+            if(!phase||!PyTuple_Check(phase)||PyTuple_Size(phase)!=3)throw std::invalid_argument("invalid phase");
+            c.phases.push_back({string(PyTuple_GetItem(phase,0)),size(PyTuple_GetItem(phase,1)),size(PyTuple_GetItem(phase,2))});
         }
     }
     return c;
@@ -103,9 +116,9 @@ inline ValidationSettings settings(PyObject* d,const Parameters& p) {
         if((s[0]!=0&&s[0]!=1)||s[4]<=0||s[5]<=0||s[6]<=0||(s[0]==1&&s[4]!=s[5]))throw std::invalid_argument("invalid solid");
         c.obstacles.push_back({s[0]==1,{s[1],s[2],s[3]},{s[4],s[5],s[6]}});
     }
-    if(!c.steps||c.cruise_levels<1||c.cruise_levels>3||c.target_radius<=0||c.position_error<0
+    if(!c.steps||c.steps>1000000||c.cruise_levels<1||c.cruise_levels>3||c.target_radius<=0||c.position_error<0
         ||c.target_radius<=c.position_error||c.clock_error<0||c.aircraft_radius<0||c.obstacle_clearance<0
-        ||c.min_delay>c.max_delay||c.min_delay<0||c.activation<0||c.latest_arrival>c.steps*p.dt
+        ||c.min_delay>c.max_delay||c.min_delay<0||c.activation<0
         ||(c.cruise_range&&c.cruise_range->at(0)>c.cruise_range->at(1)))throw std::invalid_argument("invalid validation settings");
     return c;
 }

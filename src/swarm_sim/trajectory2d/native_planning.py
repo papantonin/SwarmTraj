@@ -28,6 +28,8 @@ def options(config):
         'separation': float(config.separation), 'detour': float(config.detour),
         'level_hold': float(config.cruise_level_hold), 'cell_size': float(config.reservation_cell_size),
         'post_arrival': float(config.post_arrival_time), 'deadline': config.arrival_deadline,
+        'horizon': float(config.horizon),
+        'max_path_degrees': float(config.flight.max_flight_path_deg),
         'spatial': config.obstacle_routing == 'spatial', 'adaptive': config.planning_strategy == 'adaptive',
         'mrv': config.search_order == 'mrv', 'max_margin': config.selection_policy == 'max_margin',
         'witnesses': config.conflict_guidance == 'witness', 'reservations': config.reservation_policy == 'grid',
@@ -44,7 +46,7 @@ def designation(snapshot):
 
 def candidate_record(p):
     return dict(drone_id=p.drone_id, candidate_id=p.candidate_id, speed=p.speed, dt=p.dt,
-        release=p.release_time, arrival=p.arrival_time, cruise=p.cruise_altitude, approach=p.approach_angle,
+        release=p.release_time, arrival=p.arrival_time, cruise=p.cruise_altitude, approach=p.approach_angle,airspeed_limit=p.airspeed_limit,
         states=native._array(p.flight_states), controls=native._array(p.flight_controls),
         projected=native._array(np.column_stack((p.states, p.vertical_states))),
         acceleration=native._array(p.accelerations), vertical_acceleration=native._array(p.vertical_accelerations),
@@ -62,7 +64,7 @@ def candidate_from_record(record, config, profile=None):
     return Trajectory(record['drone_id'], record['candidate_id'], record['speed'], record['dt'],
         projected[:,:4], array('acceleration'), record['arrival'], record['release'], record['approach'],
         projected[:,4:], array('vertical_acceleration'), record['cruise'], array('states',7),
-        array('controls',4), config.flight, config.limits.max_speed, record['routing_mode'],
+        array('controls',4), config.flight, record['airspeed_limit'], record['routing_mode'],
         cruise_levels_m=tuple(record['levels']),
         speed_reference=None if record['speed_reference'] is None else array('speed_reference'),
         profile_family=record['family'], aircraft_profile=profile,
@@ -109,6 +111,46 @@ def restore_catalog_types(record):
         context['intervals_s']=tuple(tuple(i) for i in context['intervals_s'])
     for proposal in record['interval_proposals']:
         proposal['departure_interval_s']=tuple(proposal['departure_interval_s'])
+
+
+def require_planner():
+    module=native.require_native()
+    if module.build_info().get('planning_api') != 1:
+        raise RuntimeError('complete native planner unavailable; rebuild with ./scripts/build_native.sh')
+    return module
+
+
+def mission_inputs(snapshots,config):
+    if not config.coupled_flight or config.generator_mode not in ('physical_mission','physical_recovery_seed'):
+        raise ValueError('native mission planning requires coupled 3D physical generation')
+    if not snapshots:
+        raise ValueError('at least one snapshot is required')
+    if len({s.drone_id for s in snapshots}) != len(snapshots):
+        raise ValueError('drone IDs must be unique')
+    config.require_aircraft_ids(s.drone_id for s in snapshots)
+    own=[config.for_drone(s.drone_id) for s in snapshots]
+    return [designation(s) for s in snapshots],[options(c) for c in own],[native.parameters(c) for c in own]
+
+
+def approach_angles(snapshots,config):
+    records=require_planner().approach_angles(*mission_inputs(snapshots,config))
+    return {int(key):angle for key,angle in records.items()}
+
+
+def plan_mission(snapshots,config):
+    """One binding call for a complete serial mission; no numerical Python callback."""
+    from .planning import Result
+    record=require_planner().plan_mission(*mission_inputs(snapshots,config))
+    plans=tuple(candidate_from_record(p,config.for_drone(p['drone_id']),config.profile_for(p['drone_id'])) for p in record['plans'])
+    diagnostic=record['diagnostics']
+    for row in diagnostic.get('rounds',[]):
+        row['counts']=tuple(row['counts'])
+    for step in diagnostic.get('selection',{}).get('steps',[]):
+        step['counts']=tuple(step['counts'])
+    for catalog in diagnostic.get('catalogs',[]):
+        restore_catalog_types(dict(guided=catalog['guided_proposals'],interval_contexts=catalog['interval_contexts'],interval_proposals=catalog['interval_proposals']))
+    return Result(record['status'],record['reason'],plans,record['minimum_distance_lower_bound'],
+        record['required_distance'],tuple(record['counts']),record['search_nodes'],diagnostic,record['timings'])
 
 
 def extend_catalog(task):

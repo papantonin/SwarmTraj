@@ -49,7 +49,7 @@ def validation_options(config):
         spread_degrees=float(config.approach_spread_deg),
         cruise_range=None if config.cruise_altitude_range is None else _array(config.cruise_altitude_range),
         cruise_levels=config.cruise_levels, smooth_speed=config.speed_profile != 'constant',
-        speed_range=_array(config.speed_profile_range or (0., 0.)),
+        speed_range=_array(config.speed_profile_range if config.speed_profile_range is not None else (0., 0.)),
         speed_acceleration=float(config.speed_profile_acceleration), clock_error=float(config.clock_error),
         aircraft_radius=float(config.aircraft_radius), obstacle_clearance=float(config.obstacle_clearance),
         obstacles=_array([[int(o.kind == 'cylinder'), *o.center, *o.half_extents]
@@ -69,7 +69,7 @@ def validate_candidate(plan, snapshot, config, diagnostics=None):
             or plan.flight_parameters != config.flight or plan.airspeed_limit != config.limits.max_speed):
         return invalid(diagnostics, 'validation_metadata')
     record = dict(drone_id=plan.drone_id, candidate_id=plan.candidate_id, speed=plan.speed,
-        dt=plan.dt, release=plan.release_time, arrival=plan.arrival_time, cruise=plan.cruise_altitude,
+        dt=plan.dt, release=plan.release_time, arrival=plan.arrival_time, cruise=plan.cruise_altitude, airspeed_limit=plan.airspeed_limit,
         approach=plan.approach_angle, states=_array(plan.flight_states), controls=_array(plan.flight_controls),
         projected=_array(np.column_stack((plan.states, plan.vertical_states))),
         acceleration=_array(plan.accelerations), vertical_acceleration=_array(plan.vertical_accelerations),

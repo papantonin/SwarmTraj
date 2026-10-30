@@ -33,6 +33,7 @@ missions do not inherit the planner's timing or separation claims.
 - [Generator migration and validation gates](generator_migration.md)
 - [CPU/memory audit and Git checkpoint before C++](cpp_readiness.md)
 - [Optional C++20 kernel: build, numerical contract and measurements](native_kernel.md)
+- [Complete native physical planner: migration and qualification](native_planner.md)
 - [Current planning and execution architecture](architecture.md)
 
 ## Measurements and validation

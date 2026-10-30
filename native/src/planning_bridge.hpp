@@ -11,7 +11,7 @@ inline Value value(PyObject* object) {
     if(PyUnicode_Check(object))return string(object);
     if(PyList_Check(object)||PyTuple_Check(object)) {
         Value::Array items;const auto n=PySequence_Size(object);
-        for(Py_ssize_t k=0;k<n;++k){auto* item=PySequence_GetItem(object,k);if(!item)throw std::invalid_argument("invalid sequence");items.push_back(value(item));Py_DECREF(item);}return items;
+        for(Py_ssize_t k=0;k<n;++k){auto* element=item(object,k);if(!element)throw std::invalid_argument("invalid sequence");items.push_back(value(element));}return items;
     }
     if(PyDict_Check(object)) {
         Value::Object items;Py_ssize_t pos=0;PyObject *key,*item;
@@ -40,6 +40,8 @@ inline PlanningSettings planning_settings(PyObject* d,const Parameters& p) {
     for(const auto& item:{std::pair{"candidates",&c.candidates}, {"attempts",&c.attempts},{"initial_candidates",&c.initial_candidates},
         {"max_nodes",&c.max_nodes},{"margin_nodes",&c.margin_nodes},{"margin_rounds",&c.margin_rounds},{"max_entries",&c.max_entries},{"max_constraints",&c.max_constraints}})*item.second=size(get(d,item.first));
     c.separation=real(d,"separation");c.detour=real(d,"detour");c.level_hold=real(d,"level_hold");c.cell_size=real(d,"cell_size");c.post_arrival=real(d,"post_arrival");c.deadline=optional_number(get(d,"deadline"));
+    c.horizon=real(d,"horizon");
+    c.max_path_degrees=real(d,"max_path_degrees");
     for(const auto& item:{std::pair{"spatial",&c.spatial},{"adaptive",&c.adaptive},{"mrv",&c.mrv},{"max_margin",&c.max_margin},{"witnesses",&c.witnesses},
         {"reservations",&c.reservations},{"windows",&c.windows},{"mixed",&c.mixed},{"rejection_feedback",&c.rejection_feedback},{"id_approach",&c.id_approach}})*item.second=boolean(get(d,item.first));
     auto* seed=get(d,"seed_words");if(!PyList_Check(seed)||PyList_Size(seed)>100000)throw std::invalid_argument("invalid seed words");c.seed.clear();
@@ -49,7 +51,7 @@ inline PlanningSettings planning_settings(PyObject* d,const Parameters& p) {
     return c;
 }
 inline Designation designation(PyObject* d) {
-    Designation s;s.drone_id=integer(get(d,"drone_id"));s.initial=vector<7>(get(d,"initial"));s.yaw_rate=real(d,"yaw_rate");s.cruise=optional_number(get(d,"cruise"));
+    Designation s;s.drone_id=integer(get(d,"drone_id"));s.initial=vector<7>(get(d,"initial"),false);s.yaw_rate=real(d,"yaw_rate",false);s.cruise=optional_number(get(d,"cruise"),false);
     if(s.drone_id<0)throw std::invalid_argument("negative drone ID");return s;
 }
 inline RandomState random_state(PyObject* obj) {
@@ -82,7 +84,7 @@ inline Catalog catalog(PyObject* d) {
     return c;
 }
 inline PyObject* python(const Candidate& p) {
-    auto metadata=object({{"drone_id",p.drone_id},{"candidate_id",p.candidate_id},{"speed",p.speed},{"dt",p.dt},{"release",p.release},{"arrival",p.arrival},
+    auto metadata=object({{"drone_id",p.drone_id},{"candidate_id",p.candidate_id},{"speed",p.speed},{"dt",p.dt},{"release",p.release},{"arrival",p.arrival},{"airspeed_limit",p.max_speed},
         {"cruise",p.cruise?Value(*p.cruise):Value()},{"approach",p.approach?Value(*p.approach):Value()},
         {"family",p.family.empty()?Value():Value(p.family)},{"routing_mode",p.routing_mode},{"levels",values(p.levels)}});
     auto* out=python(metadata);if(!out)return nullptr;
@@ -118,7 +120,7 @@ inline Repair repair(PyObject* d) {
     Repair r;r.drone_id=integer(get(d,"drone_id"));auto* w=get(d,"conflict");
     auto ids=[&](const char* key,std::array<long long,2>& dest) {
         auto* items=get(w,key);if(PySequence_Size(items)!=2)throw std::invalid_argument("invalid witness IDs");
-        for(int j=0;j<2;++j){auto* item=PySequence_GetItem(items,j);if(!item)throw std::invalid_argument("invalid witness ID");dest[j]=integer(item);Py_DECREF(item);}
+        for(int j=0;j<2;++j){auto* element=item(items,j);if(!element)throw std::invalid_argument("invalid witness ID");dest[j]=integer(element);}
     };
     ids("drone_ids",r.conflict.drones);ids("candidate_ids",r.conflict.candidates);
     const auto positions=matrix<3>(get(w,"positions"));if(positions.size()!=2)throw std::invalid_argument("invalid witness positions");
@@ -130,7 +132,7 @@ inline DepartureWindows windows(PyObject* d) {
     DepartureWindows w;w.parent=integer(get(d,"parent_candidate_id"));w.constraints=size(get(d,"constraints"));w.exhausted=boolean(get(d,"budget_exhausted"));
     w.intervals=matrix<2>(get(d,"intervals_s"));
     auto* refs=get(d,"reference_drone_ids");const auto n=PySequence_Size(refs);if(n<0)throw std::invalid_argument("invalid references");
-    for(Py_ssize_t j=0;j<n;++j){auto* obj=PySequence_GetItem(refs,j);if(!obj)throw std::invalid_argument("invalid reference ID");w.references.push_back(integer(obj));Py_DECREF(obj);}
+    for(Py_ssize_t j=0;j<n;++j){auto* obj=item(refs,j);if(!obj)throw std::invalid_argument("invalid reference ID");w.references.push_back(integer(obj));}
     return w;
 }
 }

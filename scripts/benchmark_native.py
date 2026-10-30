@@ -1,7 +1,7 @@
-"""Paired Python/C++ physical construction on immutable saved campaign jobs.
+"""Paired Python/C++ physical planning on immutable saved campaign jobs.
 
-One/two spawn workers, identical seeds/limits/budgets. c930826 is the Python
-checkpoint. No PX4 runs or claims of native timing/separation certification.
+One/two spawn workers, identical seeds/limits/budgets. Python is the reference;
+one C++ worker uses the complete native planner. No PX4 qualification.
 """
 import argparse
 from dataclasses import replace
@@ -14,7 +14,7 @@ import resource
 import signal
 import subprocess
 import sys
-from time import perf_counter
+from time import perf_counter, process_time
 import numpy as np
 from benchmark_scaling_campaign import decode
 from benchmark_planning import signature
@@ -38,10 +38,13 @@ def worker(output,index):
     snapshots,c=decode(trial['job'])
     c=replace(c,generator_mode='physical_mission',numerical_backend=trial['backend'],planning_workers=trial['workers'])
     if c.aircraft_profiles:raise ValueError('saved benchmark scope is the common-airframe campaign')
-    start=perf_counter();result=plan_mission(snapshots,c);seconds=perf_counter()-start
+    cpu_start=process_time();start=perf_counter()
+    result=plan_mission(snapshots,c);seconds=perf_counter()-start
+    planning_process_cpu_s=process_time()-cpu_start
     plan_bytes=sum(a.nbytes for p in result.plans for a in vars(p).values() if isinstance(a,np.ndarray))
     metadata={k:trial[k] for k in ('id','backend','workers','repeat')}
-    metadata.update(seconds=seconds,status=result.status,counts=result.counts,search_nodes=result.search_nodes,
+    metadata.update(seconds=seconds,planning_process_cpu_s=planning_process_cpu_s,
+        status=result.status,counts=result.counts,search_nodes=result.search_nodes,
         signature=signature(result),timings=result.timings,
         self_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss*1024,
         largest_child_peak_rss_bytes=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss*1024,
@@ -76,7 +79,7 @@ def main():
         'reference_sha256':hashlib.sha256(args.reference.read_bytes()).hexdigest(),
         'python':platform.python_version(),'numpy':np.__version__,'cpu_info':subprocess.check_output(['lscpu'],text=True),
         'blas_threads':1,'timeout_s':raw['timeout_s'],'trials':trials,
-        'scope':'physical construction, unchanged independent Python validation and joint selection; serialized trials; uncontrolled desktop'}
+        'scope':'complete physical planning; independent Python reference; serialized trials; uncontrolled desktop; process CPU excludes spawn children'}
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2))
     env=dict(os.environ,OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1')
     rows=[]

@@ -841,7 +841,11 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
     if config.numerical_backend == 'cpp':
         from .native_planning import NativeJointSearch as JointSearch
 
-    assignments = approach_angles(snapshots, config)
+    if config.numerical_backend == 'cpp':
+        from .native_planning import approach_angles as native_approach_angles
+        assignments = native_approach_angles(snapshots, config)
+    else:
+        assignments = approach_angles(snapshots, config)
     catalogs = [Catalog() for _ in snapshots]
     search = JointSearch(config)
     rounds = []
@@ -1002,12 +1006,17 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
 def plan_mission(snapshots: tuple[Snapshot, ...], config: Config = Config()):
     """Plan from a frozen snapshot; timing is excluded from reproducible payloads."""
     if config.numerical_backend == 'cpp':
-        from .native_backend import require_native
-        require_native()  # Explicit selection must fail before starting catalogs.
+        from .native_planning import require_planner
+        require_planner()  # Explicit selection must fail before starting catalogs.
     start = perf_counter()
     from .reservations import ReservationBudgetError
     try:
-        result = _plan_mission(snapshots, config)
+        from .parallel import worker_count
+        if config.numerical_backend == 'cpp' and worker_count(config.planning_workers, len(snapshots)) == 1:
+            from .native_planning import plan_mission as native_plan
+            result = native_plan(snapshots, config)
+        else:
+            result = _plan_mission(snapshots, config)
     except ReservationBudgetError as error:
         result = Result("reservation_budget_exhausted", str(error))
     return replace(result, timings={**result.timings, "total_wall_s": perf_counter() - start})

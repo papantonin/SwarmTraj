@@ -17,6 +17,12 @@ struct SearchBox {
         else if(candidate.states!=found->second.states||candidate.controls!=found->second.controls||candidate.projected!=found->second.projected
             ||candidate.dt!=found->second.dt||candidate.speed!=found->second.speed||candidate.release!=found->second.release||candidate.arrival!=found->second.arrival)
             throw std::invalid_argument("candidate changed after joint-search caching");
+        else if(candidate.max_speed!=found->second.max_speed||candidate.acceleration!=found->second.acceleration
+            ||candidate.vertical_acceleration!=found->second.vertical_acceleration||candidate.levels!=found->second.levels
+            ||candidate.speed_reference!=found->second.speed_reference||candidate.has_speed_reference!=found->second.has_speed_reference
+            ||candidate.cruise!=found->second.cruise||candidate.approach!=found->second.approach||candidate.family!=found->second.family
+            ||candidate.routing_mode!=found->second.routing_mode||candidate.phases!=found->second.phases)
+            throw std::invalid_argument("candidate changed after joint-search caching");
         return &found->second;
     }
     Domain domain(PyObject* records) {
@@ -121,5 +127,6 @@ PyObject* swarm_search_call(PyObject*,PyObject* args) {
             {"optimization_nodes",state.search.optimization_nodes},{"optimization_budget_exhausted",state.search.optimization_budget_exhausted}})}}));
     }catch(const std::bad_alloc&){PyErr_NoMemory();return nullptr;}
      catch(const ReservationBudgetError& e){PyErr_Clear();PyErr_SetString(swarm_reservation_error,e.what());return nullptr;}
+     catch(const std::runtime_error& e){PyErr_Clear();PyErr_SetString(PyExc_RuntimeError,e.what());return nullptr;}
      catch(const std::exception& e){PyErr_Clear();PyErr_SetString(PyExc_ValueError,e.what());return nullptr;}
 }

@@ -17,7 +17,8 @@ bool hits(Point a,Point b,const Rectangle& r) {
         const double delta=b[k]-a[k];
         if(std::abs(delta)<1e-12){if(!(r.low[k]<a[k]&&a[k]<r.high[k]))return false;}
         else {double first=(r.low[k]-a[k])/delta,last=(r.high[k]-a[k])/delta;
-            if(first>last)std::swap(first,last);enter=std::max(enter,first);leave=std::min(leave,last);}
+            if(first>last)std::swap(first,last);
+            enter=std::max(enter,first);leave=std::min(leave,last);}
     }
     return enter<leave&&leave>0&&enter<1;
 }
@@ -46,7 +47,7 @@ double nominal_clearance(const PlanningSettings& c) {
     return c.aircraft_radius+c.obstacle_clearance+c.position_error+c.physics.max_speed*c.clock_error;
 }
 Recipe fixture_recipe(const PlanningSettings& c,double speed,double cruise) {
-    Recipe r{};r.steps=c.steps;r.speed=speed;r.cruise=cruise;r.angle=-c.descent_degrees*pi/180;
+    Recipe r{};r.steps=c.steps;r.speed=speed;r.cruise=cruise;r.angle=-c.descent_degrees*(pi/180);
     r.target_z=c.target_altitude.value_or(cruise);r.target_radius=c.target_radius;r.position_error=c.position_error;return r;
 }
 std::optional<double> choose_cruise(const Designation& s,const PlanningSettings& c,long long id,Pcg64& rng,const Repair* repair,const std::string& mode) {
@@ -55,7 +56,7 @@ std::optional<double> choose_cruise(const Designation& s,const PlanningSettings&
     if(c.descent_degrees>0) {
         auto r=fixture_recipe(c,s.initial[3],0.);double drop;
         if(!headroom(s.initial[3],c.physics,r,drop))return {};
-        low=std::max(low,*c.target_altitude+drop+(2*c.target_radius+s.initial[3]*c.physics.dt)*std::sin(c.descent_degrees*pi/180));
+        low=std::max(low,*c.target_altitude+drop+(2*c.target_radius+s.initial[3]*c.physics.dt)*std::sin(c.descent_degrees*(pi/180)));
     }
     if(low>high)return {};
     if(repair&&mode=="altitude") {
@@ -170,6 +171,7 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     }
     auto tail=onward(first.states.back(),c.physics,r,offset,exit);if(!tail.accepted())return {{},tail.rejection};
     Candidate plan;plan.drone_id=s.drone_id;plan.candidate_id=id;plan.speed=s.initial[3];plan.dt=c.physics.dt;
+    plan.max_speed=c.physics.max_speed;
     plan.release=release;plan.arrival=first.arrival;plan.cruise=*cruise;plan.approach=approach;
     plan.states=std::move(first.states);plan.states.insert(plan.states.end(),tail.states.begin()+1,tail.states.end());
     plan.controls=std::move(first.controls);plan.controls.insert(plan.controls.end(),tail.controls.begin(),tail.controls.end());

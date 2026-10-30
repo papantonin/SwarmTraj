@@ -12,8 +12,8 @@ Value verify_joint(const Domain& plans,const PlanningSettings& config,const std:
     Value::Array checks,obstacles;std::optional<double> minimum,maximum;
     for(std::size_t a=0;a<plans.size();++a)for(std::size_t b=a+1;b<plans.size();++b) {
         const auto& first=*plans[a];const auto& second=*plans[b];const auto& ca=own(first.drone_id);const auto& cb=own(second.drone_id);
-        const double lower=continuous_distance(first,second,ca.physics.max_speed,cb.physics.max_speed);
-        const double required=(config.separation+ca.aircraft_radius+cb.aircraft_radius)+2*config.position_error+(ca.physics.max_speed+cb.physics.max_speed)*config.clock_error;
+        const double lower=continuous_distance(first,second,first.max_speed,second.max_speed);
+        const double required=(config.separation+ca.aircraft_radius+cb.aircraft_radius)+2*config.position_error+(first.max_speed+second.max_speed)*config.clock_error;
         if(lower<required)throw std::runtime_error("joint verification failed");
         minimum=minimum?std::min(*minimum,lower):lower;maximum=maximum?std::max(*maximum,required):required;
         checks.push_back(array({lower,required}));
@@ -33,8 +33,8 @@ Value verify_joint(const Domain& plans,const PlanningSettings& config,const std:
         result["reservations"]=object({{"policy","grid"},{"cell_size_m",config.cell_size},{"full_horizon_verified",true},{"allocated",allocations}});
     }
     for(auto* p:plans)if(!config.obstacles.empty()) {
-        const auto& c=own(p->drone_id);const double lower=clearance(*p,config.obstacles)-c.physics.max_speed*p->dt/2;
-        const double required=c.aircraft_radius+config.obstacle_clearance+config.position_error+c.physics.max_speed*config.clock_error;
+        const auto& c=own(p->drone_id);const double lower=clearance(*p,config.obstacles)-p->max_speed*p->dt/2;
+        const double required=c.aircraft_radius+config.obstacle_clearance+config.position_error+p->max_speed*config.clock_error;
         if(lower<required)throw std::runtime_error("independent obstacle verification failed");
         obstacles.push_back(object({{"drone_id",p->drone_id},{"lower_bound_m",lower},{"required_m",required}}));
     }

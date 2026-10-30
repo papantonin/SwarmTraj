@@ -314,7 +314,8 @@ def worker(directory, job_id):
                     'position_noise': .01, 'disturbance_seed': 23}
             elif profile == 'outside_clock':
                 settings = {'clock_offsets': np.full(len(snapshots), .4)}
-            report = simulate(result.plans, config, **settings).report
+            report = simulate(result.plans, config,
+                execution_backend=manifest.get('execution_backend', 'python'), **settings).report
             unchanged = signature(result) == record['signature_sha256']
             record['executions'].append({'profile': profile, 'execution_wall_s': perf_counter()-before,
                 'same_plans': unchanged, 'expected_acceptance': profile != 'outside_clock',
@@ -410,12 +411,14 @@ def main(argv=None):
                         default=['controls', 'core', 'random', 'ablation', 'replay'])
     parser.add_argument('--timeout', type=float, default=120)
     parser.add_argument('--execute', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--execution-backend', choices=('python', 'cpp'), default='python',
+                        help='Explicit local execution backend for accepted saved plans; observer stays Python')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--reference', type=Path, help='Replay saved manifest inputs instead of regenerating scenes')
     parser.add_argument('--generator-mode', choices=('geometric', 'physical_mission', 'physical_recovery_seed'),
                         help='Explicit generator override; all other saved mission inputs stay unchanged')
     parser.add_argument('--numerical-backend', choices=('python', 'cpp'),
-                        help='Explicit numerical backend override; cpp requires physical coupled 3D construction')
+                        help='Explicit physical-planner backend override; cpp requires coupled 3D physical generation')
     parser.add_argument('--planning-workers', type=int,
                         help='Explicit catalog process override, except saved serial/spawn replay pairs')
     parser.add_argument('--execution-families', nargs='+', choices=FAMILIES,
@@ -475,7 +478,7 @@ def main(argv=None):
             'scipy': scipy.__version__, 'platform': platform.platform(), 'logical_cpus': os.cpu_count(),
             'cpu_info': subprocess.check_output(['lscpu'], text=True),
             'mem_info': Path('/proc/meminfo').read_text(), 'counts': args.counts, 'seeds': args.seeds,
-            'timeout_s': args.timeout, 'execute': args.execute, 'jobs': jobs,
+            'timeout_s': args.timeout, 'execute': args.execute, 'execution_backend': args.execution_backend, 'jobs': jobs,
             'scope': 'coupled point-mass planner; no Gazebo/PX4; serialized jobs; no hard real-time guarantee',
             'timing_scope': 'planning_wall_s excludes imports/export/execution; process_wall_s includes all',
             'memory_scope': 'Linux ru_maxrss: parent peak and largest child peak, not simultaneous fleet RSS',
@@ -491,7 +494,7 @@ def main(argv=None):
                 'planning_workers_override': args.planning_workers,
                 'job_ids': args.jobs,
                 'scope': 'same saved snapshots, mission constraints and timeout; explicit generator/backend/process overrides only'}
-        if any(job['config'].get('numerical_backend', 'python') == 'cpp' for job in jobs):
+        if args.execution_backend == 'cpp' or any(job['config'].get('numerical_backend', 'python') == 'cpp' for job in jobs):
             from swarm_sim.trajectory2d.native_backend import identity
             manifest['native_backend_identity'] = identity()
         write_json(directory / 'manifest.json', manifest)

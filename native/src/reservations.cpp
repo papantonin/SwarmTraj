@@ -5,7 +5,7 @@
 
 namespace swarmtraj {
 Occupancy occupancy(const Candidate& p,const PlanningSettings& c) {
-    const double radius=c.separation/2+c.aircraft_radius+c.position_error+c.physics.max_speed*(c.clock_error+p.dt/2);
+    const double radius=c.separation/2+c.aircraft_radius+c.position_error+p.max_speed*(c.clock_error+p.dt/2);
     const double size=c.cell_size;
     if(!std::isfinite(radius)||std::max(1.,2*radius/size)>std::pow(static_cast<double>(c.max_entries),1./3))
         throw ReservationBudgetError("Inflated reservation exceeds the cell/time construction budget.");
@@ -17,8 +17,9 @@ Occupancy occupancy(const Candidate& p,const PlanningSettings& c) {
             throw ReservationBudgetError("Reservation coordinates exceed the supported integer grid range.");
         Cell low,high;double count=1.;
         for(std::size_t k=0;k<3;++k){low[k]=static_cast<long long>(std::floor((point[k]-radius)/size));high[k]=static_cast<long long>(std::floor((point[k]+radius)/size));count*=static_cast<double>(high[k])-low[k]+1;}
-        if(count>c.max_entries-entries)throw ReservationBudgetError("Per-candidate cell/time construction budget exhausted; no infeasibility claim.");
-        entries+=static_cast<std::size_t>(count);
+        const auto added=static_cast<std::size_t>(count);
+        if(added>c.max_entries-entries)throw ReservationBudgetError("Per-candidate cell/time construction budget exhausted; no infeasibility claim.");
+        entries+=added;
         const double begin=std::max(0.,(static_cast<double>(n)-.5)*p.dt),end=std::min(p.controls.size()*p.dt,(n+.5)*p.dt);
         for(auto x=low[0];x<=high[0];++x)for(auto y=low[1];y<=high[1];++y)for(auto z=low[2];z<=high[2];++z) {
             auto& intervals=out.cells[{x,y,z}];
@@ -81,7 +82,7 @@ DepartureWindows departure_windows(const Candidate& parent,const Occupancy& own,
         if(cursor<interval[0])free.push_back({cursor,std::nextafter(interval[0],-std::numeric_limits<double>::infinity())});
         cursor=std::nextafter(interval[1],std::numeric_limits<double>::infinity());
     }
-    if(cursor<c.steps*c.physics.dt)free.push_back({cursor,c.steps*c.physics.dt});
+    if(cursor<c.horizon)free.push_back({cursor,c.horizon});
     for(auto interval:free){interval[0]=std::max(interval[0],low);interval[1]=std::min(interval[1],high);if(interval[0]<=interval[1])result.intervals.push_back(interval);}
     return result;
 }

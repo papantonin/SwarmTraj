@@ -15,6 +15,8 @@ PyObject* swarm_rng_probe(PyObject*,PyObject*);
 PyObject* swarm_extend_catalog(PyObject*,PyObject*);
 PyObject* swarm_search_new(PyObject*,PyObject*);
 PyObject* swarm_search_call(PyObject*,PyObject*);
+PyObject* swarm_plan_mission(PyObject*,PyObject*);
+PyObject* swarm_approach_angles(PyObject*,PyObject*);
 PyObject* swarm_reservation_error=nullptr;
 namespace {
 struct Buffer {
@@ -183,8 +185,8 @@ PyObject* evaluate(PyObject*,PyObject* args) {
 #else
 #define SWARM_COMPILER __VERSION__
 #endif
-PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:i,s:i,s:i,s:i,s:s,s:s,s:s}","abi",1,"execution_api",1,"validation_api",1,"catalog_api",1,"search_api",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
-PyMethodDef methods[]={{"evaluate",evaluate,METH_VARARGS,"Checked native numerical dispatch; float64 contiguous buffers."},{"validate_candidate",swarm_validate_candidate,METH_VARARGS,"Independent full-horizon coupled candidate validation."},{"extend_catalog",swarm_extend_catalog,METH_VARARGS,"Deterministic native physical proposals and catalog extension."},{"search_new",swarm_search_new,METH_VARARGS,"Create native bounded joint-search state."},{"search_call",swarm_search_call,METH_VARARGS,"Operate native bounded joint search."},{"_rng_probe",swarm_rng_probe,METH_VARARGS,"Deterministic PCG64 compatibility probe."},{"build_info",info,METH_NOARGS,"Native build identity."},{nullptr,nullptr,0,nullptr}};
+PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:i,s:i,s:i,s:i,s:i,s:s,s:s,s:s}","abi",1,"execution_api",1,"validation_api",1,"catalog_api",1,"search_api",1,"planning_api",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
+PyMethodDef methods[]={{"evaluate",evaluate,METH_VARARGS,"Checked native numerical dispatch; float64 contiguous buffers."},{"validate_candidate",swarm_validate_candidate,METH_VARARGS,"Independent full-horizon coupled candidate validation."},{"extend_catalog",swarm_extend_catalog,METH_VARARGS,"Deterministic native physical proposals and catalog extension."},{"search_new",swarm_search_new,METH_VARARGS,"Create native bounded joint-search state."},{"search_call",swarm_search_call,METH_VARARGS,"Operate native bounded joint search."},{"plan_mission",swarm_plan_mission,METH_VARARGS,"Complete standalone native physical mission planning."},{"approach_angles",swarm_approach_angles,METH_VARARGS,"Native deterministic approach-sector assignment."},{"_rng_probe",swarm_rng_probe,METH_VARARGS,"Deterministic PCG64 compatibility probe."},{"build_info",info,METH_NOARGS,"Native build identity."},{nullptr,nullptr,0,nullptr}};
 PyModuleDef module={PyModuleDef_HEAD_INIT,"_trajectory_native","Optional coordinated point-mass numerical core.",-1,methods};
 }
 PyMODINIT_FUNC PyInit__trajectory_native(){

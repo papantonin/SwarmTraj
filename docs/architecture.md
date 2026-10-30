@@ -13,7 +13,7 @@ flowchart TD
     Mode{"Generator choice: coupled 3D"}
     Geom["geometric: routing/vertical proposals, then coupled physical rollout"]
     Physical["physical_mission: integrated loiter, levels, transit, approach, passage, pull-out, recovery"]
-    Backend{"Offline physical construction: Python default or explicit C++20"}
+    Backend{"Physical planner: Python default or explicit C++20 numerical pipeline"}
     Individual{"Independent individual validation: forces/envelope, contact, obstacles, full horizon"}
     Catalog["Deterministic per-aircraft catalogs; serial or spawn processes"]
     Joint["Bounded joint search; full-horizon distance and optional reservations"]
@@ -65,14 +65,17 @@ Multiple process counts preserve seeded streams, order and acceptance rules.
 
 The optional [C++20 kernel](native_kernel.md) runs complete physical construction
 loops with resolved own-aircraft parameters and immutable output buffers.
-Proposal RNG, independent validation and joint search remain Python. The
+Proposals, NumPy-compatible RNG, independent validation, catalogs and joint
+search now also have native implementations. One worker uses the complete
+standalone mission API; multiple workers retain Python spawn scheduling.
+The explicit Python validator remains available for qualification. The
 independent `--execution-backend cpp` option compiles constrained local control,
 own-motion wind estimation, held-command protection and simulator propagation.
 Reference/clock scheduling, sensor RNG and independent global execution checks
-remain Python. True simulator wind enters only propagation. Construction
+remain Python. True simulator wind enters only propagation. Numerical planner
 identity belongs to the immutable mission; execution identity belongs to the
 runtime report. Shared
-PX4 editor scenarios v3 persist the selected construction backend; v1/v2 retain
+PX4 editor scenarios v3 persist the selected numerical backend; v1/v2 retain
 Python. Native fleet warm initialization is ordered by ID after the existing
 all-aircraft readiness/arming barriers, without claiming timed departure. The existing generated local PDF
 predates this optional numerical branch; regenerate it before using it as an

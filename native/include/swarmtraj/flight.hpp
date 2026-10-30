@@ -16,7 +16,7 @@ struct Parameters {
     double min_speed, max_speed, max_bank, max_roll;
     double min_altitude, max_altitude, max_climb, max_descent, max_vertical_acceleration, dt;
 };
-struct Phase { std::string name; std::size_t start, end; };
+struct Phase { std::string name; std::size_t start, end; bool operator==(const Phase&) const = default; };
 struct Path {
     std::vector<State> states;
     std::vector<Control> controls;

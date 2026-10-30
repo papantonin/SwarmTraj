@@ -103,7 +103,7 @@ def main():
                         default="geometric", help="Historical geometry or experimental directly integrated physical mission; "
                         "physical_recovery_seed is a compatibility alias for physical_mission")
     parser.add_argument('--numerical-backend', choices=('python', 'cpp'), default='python',
-                        help='construction kernel for the physical generator; independent validation stays Python')
+                        help='physical planner backend; cpp includes proposals, construction, independent validation and selection; Python remains the reference')
     parser.add_argument("--initial-candidates", type=int, default=4,
                         help="Initial catalog size and expansion batch in adaptive mode")
     parser.add_argument("--search-order", choices=("mrv", "id"), default="mrv",

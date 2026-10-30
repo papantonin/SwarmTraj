@@ -61,7 +61,10 @@ for versioned shared scenarios and the separate PX4/Gazebo workflow.
 
 The physical generator can explicitly use `--numerical-backend cpp` after
 `./scripts/build_native.sh`. Python remains the default and independent
-validator. The native backend covers physical candidate construction;
+reference validator. The native backend covers physical proposals, construction,
+independent validation, catalogs and bounded joint selection. With `--workers 1`
+the complete mission planner runs in one native call; multiple workers retain
+Python's deterministic spawn scheduling. Both paths retain independent final checks;
 the editor and shared PX4 scenario v3 records retain the explicit choice. See the
 [native kernel guide](native_kernel.md) for supported modes and measurements.
 
@@ -69,7 +72,7 @@ the editor and shared PX4 scenario v3 records retain the explicit choice. See th
 controller and simulator integration for coupled 3D execution. Its default is
 `python`; both geometric and physical plans are supported. Global observation
 and final acceptance remain Python. This choice does not change the editor's
-construction checkbox or the separate PX4/Gazebo workflow. Planar, legacy flight
+numerical-backend checkbox or the separate PX4/Gazebo workflow. Planar, legacy flight
 and the historical legacy controller reject C++ execution explicitly.
 
 ## Preparing drones and destination

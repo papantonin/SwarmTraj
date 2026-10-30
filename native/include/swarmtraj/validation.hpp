@@ -7,10 +7,11 @@ using Projection = std::array<double,6>;
 struct Solid {
     bool cylinder = false;
     std::array<double,3> center{}, half{};
+    bool operator==(const Solid&) const = default;
 };
 struct Candidate {
     long long drone_id=0, candidate_id=0;
-    double speed=12., dt=.2, release=0., arrival=0.;
+    double speed=12., dt=.2, release=0., arrival=0.,max_speed=16.;
     std::optional<double> cruise, approach;
     std::vector<State> states;
     std::vector<Control> controls;
@@ -37,6 +38,7 @@ struct ValidationSettings {
 struct ValidationResult {
     std::string rejection;
     std::optional<double> contact_time;
+    std::string detail{};
     bool accepted() const { return rejection.empty(); }
 };
 Projection project_state(const State&, const Control&, const Parameters&);

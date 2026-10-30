@@ -105,7 +105,7 @@ ValidationResult validate_candidate(const Candidate& path,const State& initial,d
     auto bad=[](const char* reason){return ValidationResult{reason,{}};};
     if(!c.steps||s.size()!=c.steps+1||u.size()!=c.steps||path.projected.size()!=c.steps+1
         ||path.acceleration.size()!=c.steps||path.vertical_acceleration.size()!=c.steps
-        ||path.speed!=initial[3]||path.dt!=p.dt||!close(s.front(),initial,1e-9))return bad("validation_metadata");
+        ||path.speed!=initial[3]||path.max_speed!=p.max_speed||path.dt!=p.dt||!close(s.front(),initial,1e-9))return bad("validation_metadata");
     if(!(c.activation+c.min_delay-1e-9<=path.release&&path.release<=c.activation+c.max_delay+1e-9))return bad("validation_departure_window");
     if(!(path.release<=path.arrival&&path.arrival<=c.latest_arrival+1e-9))return bad("validation_arrival_horizon");
     for(std::size_t k=0;k<s.size();++k)if(k*path.dt<path.release) {

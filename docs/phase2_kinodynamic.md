@@ -58,14 +58,20 @@ are proposed using unbanked physical rollouts. XY gates and optional visibility
 waypoints are routing preferences only; the actual aircraft follows bounded
 physical dynamics. A waypoint route is not an obstacle-clearance certificate.
 
-Repeated pitch-down loss and terminal-distance proposals reuse bounded scalar
-caches within each planning process. Keys include the complete resolved own
-configuration, airspeed and (for distance) cruise altitude. Unhashable caller
+The Python reference generator's repeated pitch-down loss and terminal-distance
+proposals reuse bounded scalar caches within each planning process. Keys include
+the complete resolved own configuration, airspeed and (for distance) cruise
+altitude. Unhashable caller
 configurations use the uncached path. These caches contain no aircraft states,
 commands, RNG state or acceptance decisions. Actual candidate integration and
 all independent validators still run; warm and cold caches must produce the
 same complete plans, candidate counts and joint-search results. They only avoid
 recomputing identical proposal-sizing fixtures.
+
+The optional [C++ physical planner](native_planner.md) computes these bounded
+sizing fixtures directly in compiled code and retains full candidate integration
+and independent validation. It also ports proposals, catalog extension and joint
+selection; one worker uses a complete standalone mission call.
 
 A candidate is independently checked by the existing `validate_individual`
 and contact-event code, including the requested angle at first sphere entry,

@@ -129,7 +129,7 @@ def revalidate(directory, jobs, rows):
         plans = tuple(load_plan(p) for p in document['plans'])
         for plan, stored in zip(plans, document['plans']):
             context = f'{row["id"]}: drone {plan.drone_id}'
-            if plan.to_dict() != stored or not validate_individual(plan, by_id[plan.drone_id], config):
+            if plan.to_dict() != stored or not validate_individual(plan, by_id[plan.drone_id], config, backend='python'):
                 errors.append(context + ': individual revalidation failed')
                 continue
             checked += 1
@@ -157,13 +157,13 @@ def revalidate(directory, jobs, rows):
                     errors.append(context + ': pullout connection differs')
             controls = plan.flight_controls.copy()
             controls[-1, 2] = 100.
-            if validate_individual(replace(plan, flight_controls=controls), by_id[plan.drone_id], config):
+            if validate_individual(replace(plan, flight_controls=controls), by_id[plan.drone_id], config, backend='python'):
                 errors.append(context + ': corrupted final command accepted')
             else:
                 corruptions += 1
             x, y, z = plan.flight_states[-1, :3]
             obstacle = Obstacle.box(x - 2, y - 2, max(0., z - 2), x + 2, y + 2, z + 2)
-            if validate_individual(plan, by_id[plan.drone_id], replace(config, obstacles=(*config.obstacles, obstacle))):
+            if validate_individual(plan, by_id[plan.drone_id], replace(config, obstacles=(*config.obstacles, obstacle)), backend='python'):
                 errors.append(context + ': post-arrival endpoint obstacle accepted')
             else:
                 late_obstacles += 1

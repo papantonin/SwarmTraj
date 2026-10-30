@@ -87,6 +87,10 @@ def test_reservation_budget_failure_propagates_and_changed_cached_geometry_rejec
     search.compatible(first,second)
     with pytest.raises(ValueError,match='candidate changed'):
         search.compatible(first,shifted(p,1,0,5.))
+    with pytest.raises(ValueError,match='candidate changed'):
+        search.compatible(first,replace(second,airspeed_limit=15.))
+    with pytest.raises(ValueError,match='candidate changed'):
+        search.compatible(first,replace(second,profile_family='unrequested'))
 
 
 def test_complete_margin_search_matches_exhaustive_catalog_oracle():

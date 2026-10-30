@@ -42,7 +42,7 @@ const PlanningSettings& JointSearch::own(long long id) const {
 }
 double JointSearch::required(const Candidate& a,const Candidate& b) const {
     return (config_.separation+own(a.drone_id).aircraft_radius+own(b.drone_id).aircraft_radius)
-        +2*config_.position_error+(own(a.drone_id).physics.max_speed+own(b.drone_id).physics.max_speed)*config_.clock_error;
+        +2*config_.position_error+(a.max_speed+b.max_speed)*config_.clock_error;
 }
 const Occupancy& JointSearch::occupied(const Candidate& p) {
     const std::array<long long,2> key{p.drone_id,p.candidate_id};auto found=occupancies_.find(key);
@@ -53,7 +53,7 @@ bool JointSearch::compatible(const Candidate& first,const Candidate& second) {
     const auto& a=first.drone_id<second.drone_id?first:second;const auto& b=first.drone_id<second.drone_id?second:first;
     const Key key{a.drone_id,a.candidate_id,b.drone_id,b.candidate_id};auto cached=cache_.find(key);
     if(cached!=cache_.end()){++cache_hits_;return cached->second;}
-    const double lower=continuous_distance(a,b,own(a.drone_id).physics.max_speed,own(b.drone_id).physics.max_speed);
+    const double lower=continuous_distance(a,b,a.max_speed,b.max_speed);
     const double needed=required(a,b);bool valid=lower>=needed+1e-7;
     if(valid&&config_.reservations) {
         auto conflict=first_conflict(occupied(a),occupied(b));
@@ -143,9 +143,11 @@ std::vector<std::size_t> JointSearch::expansion_indices(const std::vector<Catalo
         const auto x=snapshots[a].drone_id,y=snapshots[b].drone_id;
         if(count(wipeouts_,x)!=count(wipeouts_,y))return count(wipeouts_,x)>count(wipeouts_,y);
         if(scores[x]!=scores[y])return scores[x]>scores[y];
-        if(catalogs[a].plans.size()!=catalogs[b].plans.size())return catalogs[a].plans.size()<catalogs[b].plans.size();return x<y;
+        if(catalogs[a].plans.size()!=catalogs[b].plans.size())return catalogs[a].plans.size()<catalogs[b].plans.size();
+        return x<y;
     });
-    if(available.size()>2)available.resize(2);return available;
+    if(available.size()>2)available.resize(2);
+    return available;
 }
 std::vector<std::size_t> JointSearch::margin_expansion_indices(const std::vector<Catalog>& catalogs,const std::vector<Designation>& snapshots,const Domain& plans) {
     std::map<long long,std::size_t> indices;for(std::size_t k=0;k<snapshots.size();++k)indices[snapshots[k].drone_id]=k;
