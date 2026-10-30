@@ -152,7 +152,7 @@ def test_margin_selection_is_spawn_and_input_order_reproducible():
 
 
 def test_four_coupled_aircraft_prefer_margin_without_relaxing_obstacles_or_flight():
-    config = Config(dimensions=3, target=(500, 300), target_altitude=30, horizon=180,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 300), target_altitude=30, horizon=180,
                     cruise_altitude_range=(40, 110), descent_angle_deg=30, max_descent_rate=10,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180, candidates=8,
                     planning_strategy="adaptive", search_order="mrv", selection_policy="max_margin",

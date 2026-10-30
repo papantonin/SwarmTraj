@@ -10,7 +10,7 @@ from swarm_sim.trajectory2d.flight3d import from_snapshot, project, propagate, t
 
 
 def straight_flight():
-    config = Config(dimensions=3, target=(24., 0.), target_altitude=80., horizon=4.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(24., 0.), target_altitude=80., horizon=4.,
                     activation_time=0., max_extra_loiter=0., post_arrival_time=1.,
                     cruise_altitude_range=(80., 80.))
     snapshot = Snapshot(0, (0., 0., 0., 0.), 12., altitude=80.)

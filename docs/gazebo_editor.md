@@ -5,6 +5,8 @@ The renderer is not a kinematic replay: a real PX4 SITL instance flies the
 image's original Cessna aerodynamic model. The calculated point-mass reference
 is an illustrative planning proxy, **not a calibrated Cessna model**.
 Read the [backend prerequisites and limitations](px4_gazebo.md) first.
+Fresh editor scenes now select the physical C++ planner by default. See
+[default selection and saved-file compatibility](planner_defaults.md).
 For four aircraft, use the separate opt-in
 [shared-world fleet workflow](gazebo_fleet.md), not the single-aircraft JSON.
 
@@ -13,7 +15,7 @@ For four aircraft, use the separate opt-in
 ```bash
 # Edit the supplied loitering-aircraft scene, then calculate and fly it.
 .venv/bin/python examples/px4_gazebo.py --edit-scenario --run --gui --gpu \
-  --scenario examples/scenarios/px4_single_loiter.json --timeout 1200
+  --scenario examples/scenarios/px4_single_loiter_cpp.json --timeout 1200
 
 # Start a fresh editor with the historical obstacle file.
 .venv/bin/python examples/px4_gazebo.py --edit-scenario --run --gui --gpu \
@@ -45,14 +47,17 @@ Both paths use the independent full-horizon physical/obstacle/joint validators.
 `--workers 0` selects available CPUs. These overrides apply before the editor
 opens, and do not change physical limits or the native PX4 controller.
 
-After `./scripts/build_native.sh`, add `--generator-mode physical_mission`
-and `--numerical-backend cpp` to accelerate reference construction. The editor's
+After `./scripts/build_native.sh`, fresh coupled 3D scenes use
+`physical_mission` / `cpp` by default. Explicit `--numerical-backend python`
+selects the Python reference planner. Loaded records keep their saved choices;
+an old v1 scene requires both generator/backend overrides to select C++.
+The editor's
 **C++ construction (off: Python)** checkbox changes this same option and is
 enabled only with the physical coupled 3D generator. Select Python before
 switching back to geometric generation. Missing native extensions and invalid
 combinations are rejected; there is no automatic fallback. **Reset** restores
-both the input generator and backend. Validation and native PX4 control remain
-unchanged.
+both the input generator and backend. All validation requirements and native
+PX4 control remain unchanged.
 
 New scenarios use `swarm-px4-editor-v3` with required
 `mission.generator_mode` and `mission.numerical_backend`. Existing v1 files mean

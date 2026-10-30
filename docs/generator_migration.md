@@ -2,8 +2,10 @@
 
 The physical builder is available throughout the coupled 3D preparation path:
 trajectory CLI, Python editor, versioned shared scenarios, and the one/four
-aircraft PX4/Gazebo adapters. The current default remains `geometric` pending
-the validation gates below. Selecting the physical builder changes reference
+aircraft PX4/Gazebo adapters. Fresh coupled 3D scenes now default to
+`physical_mission` / `cpp`; [default selection and compatibility](planner_defaults.md)
+preserve saved choices. The dated qualification sections below retain the
+defaults in force during their original experiments. Selecting the physical builder changes reference
 construction, not Gazebo aerodynamics, PX4 control or the planner's safety limits.
 
 ## Use the physical builder explicitly

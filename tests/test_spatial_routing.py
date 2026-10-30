@@ -15,7 +15,7 @@ from swarm_sim.trajectory2d.routing3d import spatial_cruise_proposal, spatial_wa
 def scene(obstacle):
     start = np.array([-200., 0])
     waypoints = [np.array(p, dtype=float) for p in [(-80, 0), (100, 0), (300, 0), (400, 0), (500, 0)]]
-    config = Config(dimensions=3, obstacle_routing='spatial', cruise_altitude_range=(50, 140),
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', obstacle_routing='spatial', cruise_altitude_range=(50, 140),
                     obstacles=(obstacle,))
     snapshot = Snapshot(0, (*start, 0, 0), 12, altitude=50)
     return start, waypoints, config, snapshot
@@ -67,7 +67,7 @@ def four_aircraft_spatial_mission(request):
     mode = request.param
     obstacle = (Obstacle.box(220, -500, 0, 260, 500, 60) if mode == 'overflight' else
                 Obstacle.box(220, -500, 180, 260, 500, 250))
-    config = Config(dimensions=3, target=(600, 0), target_altitude=80, horizon=120,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(600, 0), target_altitude=80, horizon=120,
                     activation_time=0, max_extra_loiter=0, cruise_altitude_range=(80, 170),
                     max_descent_rate=10, obstacle_routing='spatial', obstacles=(obstacle,),
                     planning_strategy='adaptive', search_order='mrv', candidates=8, attempts=24,

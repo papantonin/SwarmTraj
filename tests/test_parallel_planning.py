@@ -65,7 +65,7 @@ def test_spawn_catalogs_and_joint_search_are_exactly_reproducible():
 
 
 def coupled_config():
-    return Config(dimensions=3, target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
+    return Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
                   cruise_altitude_range=(30, 120), horizon=120, candidates=3, attempts=12)
 
 

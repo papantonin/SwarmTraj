@@ -42,7 +42,7 @@ def main():
         'intervals-profiles-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.json')
     if output.exists():
         parser.error('output must be a new file')
-    base = Config(dimensions=3, target=tuple(args.target), target_altitude=30, horizon=args.horizon,
+    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=tuple(args.target), target_altitude=30, horizon=args.horizon,
                   activation_time=args.activation_time, descent_angle_deg=30, max_descent_rate=10,
                   cruise_altitude_range=tuple(args.cruise_range), planning_strategy='adaptive', search_order='mrv',
                   initial_candidates=args.initial_candidates, selection_policy='max_margin', conflict_guidance='witness',

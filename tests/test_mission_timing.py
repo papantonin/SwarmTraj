@@ -66,7 +66,7 @@ def test_observer_reports_arrival_deadline_even_for_unvalidated_test_plan():
 
 
 def test_vertical_rejections_identify_climb_and_post_passage_recovery():
-    config = Config(dimensions=3, target_altitude=30, descent_angle_deg=30,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, descent_angle_deg=30,
                     max_descent_rate=10, horizon=60, activation_time=0)
     snapshot = Snapshot(0, (0, 0, 0, 0), 12, altitude=80, cruise_altitude=80)
     diagnostic = {}

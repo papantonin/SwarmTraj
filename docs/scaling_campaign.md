@@ -159,7 +159,9 @@ not mean that the new generator is suitable as the default. Its promotion
 decision also requires complete coverage, no lost historical successes, all
 negative controls and exact spawn comparisons, complete execution profiles
 with matching expectations, and no unresolved timeouts or revalidation errors.
-The default remains `geometric`; the reporter never changes it.
+The reporter never changes defaults. Fresh coupled 3D defaults are documented
+in [default selection](planner_defaults.md); historical campaign cases keep
+their explicit geometric/Python baseline.
 
 See the [completed saved-input comparison](phase2_kinodynamic.md#completed-saved-input-comparison)
 for the historical measured outcomes, hardware, execution coverage and censored

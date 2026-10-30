@@ -2,7 +2,7 @@
 
 ## Scope and explicit permissions
 
-Enable `--passage-guidance safe_windows` with grid reservations and smooth speed
+Enable `--generator-mode geometric --passage-guidance safe_windows` with grid reservations and smooth speed
 permission. The default is `none`. This opt-in requires coupled 3D flight;
 strict constant-speed requests are rejected as incompatible, not silently
 changed. It works independently of departure-window guidance, including when
@@ -97,7 +97,7 @@ claimed. The clocks/tubes and numerical limitations of the
   --target 500 500 --horizon 240 --activation-time 30 --approach-spread 180 \
   --obstacles examples/scenarios/static_obstacles.json \
   --reservation-policy grid --interval-guidance safe_windows \
-  --passage-guidance safe_windows --initial-candidates 2 \
+  --generator-mode geometric --passage-guidance safe_windows --initial-candidates 2 \
   --cruise-levels 2 --speed-profile smooth --speed-profile-range 10 14
 
 # Explicitly permitted mixed families; still four aircraft.

@@ -1,7 +1,8 @@
-# Optional C++20 numerical kernels
+# C++20 numerical kernels
 
-The `physical_mission` generator can use an explicit C++ numerical backend.
-Python remains the default and the independent validation reference. The
+New coupled 3D missions default to `physical_mission` and the C++ numerical
+backend. Python remains the interface and explicit independent validation
+reference. See [default selection and saved compatibility](planner_defaults.md). The
 standalone library covers seven-state flight dynamics, held-control RK4,
 construction envelope samples, local construction guidance, terminal fixtures,
 pull-out and complete physical candidate construction. It now also covers
@@ -41,8 +42,9 @@ directly. pybind11 and scikit-build-core can be considered if a larger binding
 surface justifies them. Linux x86-64 / CPython 3.12 / GCC 13.3 is the tested
 platform; other compiler/platform branches have not been qualified.
 
-Library callers select `Config(generator_mode="physical_mission",
-numerical_backend="cpp", ...)`. A missing/incompatible extension fails explicitly
+Library callers select `Config(dimensions=3)` for the new physical/C++ defaults,
+or explicitly set `numerical_backend="python"` for reference planning.
+A missing/incompatible extension fails explicitly
 before catalog generation. There is no automatic fallback. The option requires
 coupled 3D physical generation; geometric, planar and legacy modes reject it.
 Shared PX4 editor scenarios now save the backend explicitly in v3 records.
@@ -123,7 +125,8 @@ measure `--workers 1` before requesting more processes.
 
 `simulate(plans, config, execution_backend="cpp")` and the trajectory CLI's
 `--execution-backend cpp` select the execution kernel independently of
-`Config.numerical_backend`. Both default to Python. C++ execution supports
+`Config.numerical_backend`. Local execution defaults to Python; physical 3D
+planning defaults to C++. C++ execution supports
 coupled 3D plans made by either generator, with the `constrained` controller.
 Planar, legacy-flight and `--tracking-controller legacy` combinations reject
 this option explicitly. A missing extension or missing `execution_api=1`
@@ -310,7 +313,7 @@ declared C++/Python tolerances. Artifact/input audits have no errors, all 19
 negative controls match and all 10 native serial/spawn comparisons match exactly.
 See `scaling/analysis/index.html`, `scaling/analysis/generator-comparison.json` and the separate
 `saved-array-comparison.json` in the development directory. These checks retain
-the geometric/Python defaults and do not establish PX4/Gazebo qualification.
+the then-current geometric/Python defaults and do not establish PX4/Gazebo qualification.
 
 The kernel removes Python small-array allocation churn in the hot loop. It
 does not remove interpreter/process memory, combinatorial search complexity or
@@ -410,5 +413,5 @@ packaging regressions, six standalone/sanitizer tests, 259 saved campaign jobs,
 72 execution expectations and independent Python revalidation of 600 plans.
 Its paired planning and complete CLI measurements supersede the
 construction-only measurements above for the current implementation. Defaults
-remain Python/geometric; the detailed guide separates planning gains from the
+were Python/geometric at that checkpoint; the detailed guide separates planning gains from the
 remaining Python execution observation, serialization and static rendering.

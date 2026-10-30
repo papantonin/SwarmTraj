@@ -265,7 +265,10 @@ catalog parallelism. Keep worker functions spawn-safe and entry points guarded
 by `if __name__ == "__main__":`. Preserve read-only plan arrays after process
 transfer and propagate worker failures rather than validating partial output.
 
-The library defaults to one worker; the CLI defaults to automatic selection.
+New coupled 3D missions default to physical C++ planning. Historical recorded
+selections and planar/legacy modes retain their explicit Python paths.
+The library defaults to one worker; the CLI defaults to one for C++ and
+automatic selection for Python. See `docs/planner_defaults.md`.
 Performance-only changes must retain validation points, budgets and margins.
 Use the benchmark's result signatures to compare identical scenarios, and
 report actual hardware, settings and measured timings rather than guaranteed

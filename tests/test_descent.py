@@ -18,7 +18,7 @@ def snapshots():
                                    {"descent_angle_deg": 10, "target_altitude": None},
                                    {"descent_angle_deg": 10, "dimensions": 2, "target_altitude": None}])
 def test_invalid_descent_configuration(kwargs):
-    params = dict(dimensions=3, target_altitude=30)
+    params = dict(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30)
     params.update(kwargs)
     with pytest.raises(ValueError):
         Config(**params)
@@ -26,7 +26,7 @@ def test_invalid_descent_configuration(kwargs):
 
 def test_common_descent_angle_passage_recovery_and_separation():
     # Preserve this historical 2.5D catalogue regression, including its ID slots.
-    config = Config(dimensions=3, flight_model="legacy", approach_assignment="id", target=(500, 300), target_altitude=30, horizon=150,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", approach_assignment="id", target=(500, 300), target_altitude=30, horizon=150,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180,
                     cruise_altitude_range=(40, 110), descent_angle_deg=10)
     initial = snapshots()
@@ -56,7 +56,7 @@ def test_common_descent_angle_passage_recovery_and_separation():
 @pytest.mark.parametrize("changes", [{"descent_angle_deg": 30}, {"target_altitude": 0},
                                      {"cruise_altitude_range": (30, 31)}])
 def test_unachievable_descent_or_recovery_is_rejected_before_generation(changes):
-    config = Config(dimensions=3, flight_model="legacy", target_altitude=30, descent_angle_deg=10, cruise_altitude_range=(40, 110))
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", target_altitude=30, descent_angle_deg=10, cruise_altitude_range=(40, 110))
     result = plan_mission(snapshots(), replace(config, **changes))
     assert result.status == "descent_not_feasible"
     assert not result.plans
@@ -65,7 +65,7 @@ def test_unachievable_descent_or_recovery_is_rejected_before_generation(changes)
 
 def test_editor_descent_limit_reset_and_required_xyz_mode():
     import matplotlib.pyplot as plt
-    editor = ScenarioEditor(snapshots(), (500, 300), Config(dimensions=3, target_altitude=30,
+    editor = ScenarioEditor(snapshots(), (500, 300), Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30,
                             cruise_altitude_range=(40, 110)))
     try:
         editor.descent_input.set_val("30")

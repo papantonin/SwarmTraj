@@ -1,4 +1,4 @@
-"""Optional native construction never replaces the independent Python validator."""
+"""Native kernels compared against an explicitly selected Python reference."""
 from dataclasses import replace
 import importlib.util
 import pickle
@@ -14,7 +14,7 @@ requires_native = pytest.mark.skipif(not HAS_NATIVE, reason='optional C++ extens
 
 
 def case(**kwargs):
-    c=Config(dimensions=3,generator_mode='physical_mission',target=(500.,0.),
+    c=Config(dimensions=3, numerical_backend='python',generator_mode='physical_mission',target=(500.,0.),
         target_altitude=30.,descent_angle_deg=30.,max_descent_rate=8.,horizon=120.,
         cruise_altitude_range=(70.,100.),max_extra_loiter=0.,candidates=1,attempts=3)
     c=replace(c,**kwargs)
@@ -22,10 +22,10 @@ def case(**kwargs):
     return s,c
 
 
-def test_backend_is_explicit_and_construction_only(monkeypatch):
+def test_backend_is_explicit_and_physical_only(monkeypatch):
     assert Config().numerical_backend=='python'
     for changes in ({'numerical_backend':'bad'},{'numerical_backend':'cpp'},
-                    {'dimensions':3,'numerical_backend':'cpp'}):
+                    {'dimensions':3,'generator_mode':'geometric','numerical_backend':'cpp'}):
         with pytest.raises(ValueError):Config(**changes)
     native.require_native.cache_clear()
     original=native.import_module

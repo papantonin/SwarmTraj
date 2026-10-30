@@ -5,6 +5,10 @@ physical-planning algorithms into the standalone C++20 library, while keeping
 Python defaults, historical modes and an explicit Python validation oracle.
 The point-mass planner is separate from PX4/Gazebo dynamics and controllers.
 
+This page records the migration checkpoints with their then-current Python
+defaults. New coupled 3D missions now use physical/C++ planning by default;
+see [selection, installation and archive compatibility](planner_defaults.md).
+
 ## 1. Stable execution checkpoint
 
 `9887248` records the previously qualified construction/execution kernels,

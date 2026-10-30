@@ -30,7 +30,7 @@ RASCAL = ROOT / 'examples/aircraft/rascal110_empty_approx.json'
 
 def mixed_config(**kwargs):
     a, b = load_aircraft_profile(REFERENCE), load_aircraft_profile(TRAINING)
-    return Config(dimensions=3, aircraft_profiles=((0, a), (1, b), (2, a), (3, b)), **kwargs)
+    return Config(dimensions=3, generator_mode='geometric', numerical_backend='python', aircraft_profiles=((0, a), (1, b), (2, a), (3, b)), **kwargs)
 
 
 def snapshots():
@@ -66,7 +66,7 @@ def test_local_binding_is_immutable_picklable_and_contains_no_peers():
     ((0, reference_aircraft_profile()), (0, reference_aircraft_profile())), ((0, {}),)))
 def test_invalid_bindings_rejected(bindings):
     with pytest.raises(ValueError):
-        Config(dimensions=3, aircraft_profiles=bindings)
+        Config(dimensions=3, generator_mode='geometric', numerical_backend='python', aircraft_profiles=bindings)
 
 
 def test_exact_membership_and_each_initial_envelope_are_required():

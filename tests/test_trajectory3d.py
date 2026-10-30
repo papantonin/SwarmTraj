@@ -34,7 +34,7 @@ def test_layers_resolve_recorded_2d_conflict_without_delaying_departures():
     # User's recorded failure: target (500,250), speeds 16/16/16/12, no delay.
     snapshots = tuple(s.with_speed(speed, Config().limits) for s, speed in
                       zip(layered_snapshot(), [16, 16, 16, 12]))
-    config = Config(dimensions=3, flight_model="legacy", target=(500, 250), activation_time=0,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", target=(500, 250), activation_time=0,
                     max_extra_loiter=0, approach_spread_deg=180)
     result = plan_mission(snapshots, config)
     assert result.validated
@@ -60,7 +60,7 @@ def test_layers_resolve_recorded_2d_conflict_without_delaying_departures():
 
 def test_common_altitude_requires_real_climb_descent_and_safe_exit():
     snapshots = layered_snapshot(cruise_offset=10)
-    config = Config(dimensions=3, flight_model="legacy", target=(500, 250), target_altitude=30, horizon=150,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", target=(500, 250), target_altitude=30, horizon=150,
                     approach_spread_deg=180)
     result = plan_mission(snapshots, config)
     assert result.validated, (result.status, result.counts)
@@ -89,7 +89,7 @@ def test_vertical_crossing_between_samples_is_not_certified():
 
 def test_altitudes_are_not_teleported_and_invalid_profiles_are_rejected():
     snapshots = layered_snapshot(cruise_offset=10)[:1]
-    config = Config(dimensions=3, flight_model="legacy", activation_time=3, max_extra_loiter=0, candidates=1)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", activation_time=3, max_extra_loiter=0, candidates=1)
     result = plan_mission(snapshots, config)
     assert result.validated
     plan = result.plans[0]
@@ -110,7 +110,7 @@ def test_altitudes_are_not_teleported_and_invalid_profiles_are_rejected():
                                    {"target_altitude": 500}, {"max_altitude": np.inf}])
 def test_invalid_vertical_configuration_is_rejected(kwargs):
     with pytest.raises(ValueError):
-        Config(dimensions=3, **kwargs)
+        Config(dimensions=3, generator_mode='geometric', numerical_backend='python', **kwargs)
 
 
 def test_recorded_common_xyz_failure_is_resolved_with_simultaneous_departures():
@@ -120,7 +120,7 @@ def test_recorded_common_xyz_failure_is_resolved_with_simultaneous_departures():
     snapshots = tuple(replace(s, state=(*xy, *s.state[2:]))
                       for s, xy in zip(layered_snapshot(), positions))
     # Replay the recorded historical scenario with its original ID allocation.
-    config = Config(dimensions=3, flight_model="legacy", approach_assignment="id", target=(500, 300), target_altitude=30,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", approach_assignment="id", target=(500, 300), target_altitude=30,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180)
     result = plan_mission(snapshots, config)
     assert result.validated, (result.status, result.counts)
@@ -142,7 +142,7 @@ def test_recorded_common_xyz_failure_is_resolved_with_simultaneous_departures():
 def test_shared_cruise_range_is_selected_jointly_and_reaches_common_xyz():
     snapshots = tuple(replace(s, cruise_altitude=-100) for s in layered_snapshot())
     # Old per-aircraft cruise settings are irrelevant in automatic mode.
-    config = Config(dimensions=3, flight_model="legacy", approach_assignment="id", target=(500, 300), target_altitude=30,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", approach_assignment="id", target=(500, 300), target_altitude=30,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180,
                     cruise_altitude_range=(40, 110))
     result = plan_mission(snapshots, config)
@@ -172,11 +172,11 @@ def test_shared_cruise_range_is_selected_jointly_and_reaches_common_xyz():
 @pytest.mark.parametrize("bounds", [(80, 40), (-1, 100), (30, 201), (0, np.inf), (np.nan, 100), (30,)])
 def test_invalid_cruise_range_is_rejected(bounds):
     with pytest.raises(ValueError):
-        Config(dimensions=3, cruise_altitude_range=bounds)
+        Config(dimensions=3, generator_mode='geometric', numerical_backend='python', cruise_altitude_range=bounds)
 
 
 def test_fixed_shared_cruise_level_is_allowed():
-    config = Config(dimensions=3, flight_model="legacy", target=(500, 300), target_altitude=30,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model="legacy", target=(500, 300), target_altitude=30,
                     horizon=150, cruise_altitude_range=(60, 60), candidates=1)
     snapshots = layered_snapshot()[:1]
     result = plan_mission(snapshots, config)

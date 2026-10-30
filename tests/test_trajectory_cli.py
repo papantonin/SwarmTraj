@@ -25,7 +25,7 @@ import swarm_sim.trajectory2d as trajectory
     (["--candidate-guidance", "rejections"], 30, (30, 120)),
     (["--profile-policy", "adaptive_mixed", "--cruise-levels", "2",
       "--speed-profile", "smooth", "--speed-profile-range", "10", "14"], 30, (30, 120)),
-    (["--passage-guidance", "safe_windows", "--reservation-policy", "grid",
+    (["--generator-mode", "geometric", "--passage-guidance", "safe_windows", "--reservation-policy", "grid",
       "--speed-profile", "smooth", "--speed-profile-range", "10", "14"], 30, (30, 120)),
     (["--reservation-policy", "grid", "--reservation-cell-size", "10"], 30, (30, 120)),
     (["--reservation-policy", "grid", "--interval-guidance", "safe_windows", "--cruise-levels", "2",
@@ -52,7 +52,8 @@ def test_cli_preserves_common_xyz_objective_by_default(monkeypatch, tmp_path, op
         assert config.max_climb_rate == 3
         assert config.descent_rate_limit == 10
         assert config.approach_assignment == ("id" if "--approach-assignment" in options else "geometric")
-        assert config.planning_workers == (2 if "--workers" in options else 0)
+        assert config.planning_workers == (2 if "--workers" in options else
+                                            1 if config.numerical_backend == 'cpp' else 0)
         assert config.rollout_check_interval == (1 if "--rollout-check-interval" in options else 16)
         assert config.planning_strategy == ("fixed" if "--planning-strategy" in options else "adaptive")
         assert config.conflict_guidance == ("none" if "--conflict-guidance" in options else "witness")

@@ -13,7 +13,7 @@ from swarm_sim.trajectory2d.planning import mission_document, validate_individua
 
 
 def mission_case(speed=13., **changes):
-    config = Config(dimensions=3, generator_mode='physical_mission', target=(500., 0.),
+    config = Config(dimensions=3, numerical_backend='python', generator_mode='physical_mission', target=(500., 0.),
         target_altitude=30., descent_angle_deg=30., max_descent_rate=8.,
         horizon=120., cruise_altitude_range=(70., 100.), max_extra_loiter=0.,
         candidates=1, attempts=3)
@@ -332,7 +332,7 @@ def test_earliest_legal_departure_is_explored_without_widening_bounds():
 def test_original_five_aircraft_short_mission_recovers_without_relaxing_inputs():
     from itertools import combinations
     from swarm_sim.trajectory2d.planning import continuous_distance_lower_bound, required_distance
-    config = Config(dimensions=3, generator_mode='physical_mission', target_altitude=30.,
+    config = Config(dimensions=3, numerical_backend='python', generator_mode='physical_mission', target_altitude=30.,
         max_descent_rate=10., descent_angle_deg=30., cruise_altitude_range=(30., 120.),
         planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
         selection_policy='max_margin', conflict_guidance='witness', obstacle_routing='spatial')

@@ -25,7 +25,7 @@ def test_invalid_profile_configuration(values):
 def test_speed_bump_is_smooth_bounded_and_keeps_holding_and_terminal_speed():
     from types import SimpleNamespace
     proposal = SimpleNamespace(speed=12, release_time=10, arrival_time=80, drone_id=0, candidate_id=0)
-    config = Config(dimensions=3, speed_profile='smooth', speed_profile_range=(10, 14))
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', speed_profile='smooth', speed_profile_range=(10, 14))
     fine = np.linspace(0, 100, 10001)
     speed, derivative = speed_schedule(proposal, config, fine)
     assert speed.min() >= 10 and speed.max() <= 14
@@ -42,7 +42,7 @@ def test_speed_bump_is_smooth_bounded_and_keeps_holding_and_terminal_speed():
 
 @pytest.fixture(scope='module')
 def scene():
-    config = Config(dimensions=3, target=(500, 500), target_altitude=30, horizon=210,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=210,
                     activation_time=30, descent_angle_deg=30, max_descent_rate=10,
                     cruise_altitude_range=(30, 120), cruise_levels=2,
                     speed_profile='smooth', speed_profile_range=(10, 14),
@@ -84,7 +84,7 @@ def test_independent_validation_rejects_false_profile_metadata(scene, tamper):
 def test_rich_interval_guided_four_drone_planning_is_spawn_reproducible_and_executes():
     from swarm_sim.trajectory2d.obstacles import load_obstacles
     from swarm_sim.trajectory2d.execution import simulate
-    config = Config(dimensions=3, target=(500, 500), target_altitude=30, horizon=240,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=240,
                     activation_time=30, descent_angle_deg=30, max_descent_rate=10,
                     cruise_altitude_range=(30, 120), cruise_levels=2,
                     speed_profile='smooth', speed_profile_range=(10, 14),
@@ -110,7 +110,7 @@ def test_rich_interval_guided_four_drone_planning_is_spawn_reproducible_and_exec
 
 def test_three_level_geometric_profiles_keep_exact_grid_kinematics():
     from swarm_sim.trajectory2d.vertical import build_profile
-    config = Config(dimensions=3, horizon=180, cruise_altitude_range=(40, 120), cruise_levels=3,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', horizon=180, cruise_altitude_range=(40, 120), cruise_levels=3,
                     target_altitude=30, max_descent_rate=10)
     snapshot = replace(separate_loiter_snapshot()[0], altitude=80, cruise_altitude=80)
     info = {}

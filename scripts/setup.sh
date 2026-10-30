@@ -11,5 +11,6 @@ python3 -m venv "${VENV_DIR}"
 "${VENV_DIR}/bin/python" -m pip install --no-deps \
   "gym-pybullet-drones @ git+https://github.com/learnsyslab/gym-pybullet-drones.git@${UPSTREAM_COMMIT}"
 "${VENV_DIR}/bin/python" -m pip install -e "${PROJECT_DIR}[dev]"
+bash "${PROJECT_DIR}/scripts/build_native.sh"
 
 echo "Environment ready. Activate it with: source .venv/bin/activate"

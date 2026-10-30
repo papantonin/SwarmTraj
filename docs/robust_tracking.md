@@ -61,7 +61,8 @@ both sides of actuator switches and the independent global observer remain
 Python. The controller receives estimated wind from own motion, never the true
 simulator disturbance. Protection keeps all sample counts, integration steps,
 tolerances and failure rules above. Select it independently of construction's
-`--numerical-backend`; both default to Python. C++ execution rejects the legacy
+`--numerical-backend`; local execution defaults to Python while fresh physical
+3D planning defaults to C++. C++ execution rejects the legacy
 controller and planar/legacy flight modes. See [native execution](native_kernel.md#optional-local-execution-kernel)
 for build, identity and paired-replay commands.
 

@@ -34,6 +34,7 @@ missions do not inherit the planner's timing or separation claims.
 - [CPU/memory audit and Git checkpoint before C++](cpp_readiness.md)
 - [Optional C++20 kernel: build, numerical contract and measurements](native_kernel.md)
 - [Complete native physical planner: migration and qualification](native_planner.md)
+- [Default C++ planner: selection, installation and saved-scenario compatibility](planner_defaults.md)
 - [Current planning and execution architecture](architecture.md)
 
 ## Measurements and validation

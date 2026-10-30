@@ -7,8 +7,8 @@ The CLI now defaults to adaptive catalogs and MRV search; see
 behavior. `scripts/benchmark_planning.py` still uses fixed catalogs through the
 library defaults, retaining its original comparison semantics.
 
-Catalog generation is independent for each drone. The launcher uses **separate
-processes** for this stage, followed by a joint search that remains deterministic
+Catalog generation is independent for each drone. Requested parallel generation
+uses **separate processes**, followed by a joint search that remains deterministic
 and sequential. No in-flight communication between drones is introduced.
 These are not Python threads:
 [ProcessPoolExecutor](https://docs.python.org/3.12/library/concurrent.futures.html#processpoolexecutor)
@@ -18,7 +18,7 @@ runs CPU-bound loops on multiple processors without depending on the GIL.
 
 ```bash
 # Automatic: min(number of drones, available logical CPUs)
-.venv/bin/python examples/trajectory_3d.py --approach-spread 180 --horizon 150
+.venv/bin/python examples/trajectory_3d.py --approach-spread 180 --horizon 150 --workers 0
 
 # Choose 2 or 4 processes, depending on the machine
 .venv/bin/python examples/trajectory_3d.py --approach-spread 180 --horizon 150 --workers 2
@@ -28,10 +28,11 @@ runs CPU-bound loops on multiple processors without depending on the GIL.
 .venv/bin/python examples/trajectory_3d.py --workers 1
 
 # Pre-optimization reference path: sequential, checking every step
-.venv/bin/python examples/trajectory_3d.py --workers 1 --rollout-check-interval 1
+.venv/bin/python examples/trajectory_3d.py --generator-mode geometric --workers 1 --rollout-check-interval 1
 ```
 
-The **launcher** defaults to `--workers 0` (automatic). The **Python API** keeps
+The **launcher** defaults to one worker for physical C++ planning and
+`--workers 0` (automatic) for Python. The **Python API** keeps
 `Config(planning_workers=1)` to avoid implicitly creating processes in a notebook
 or host application. Setting `planning_workers=0`, `2` or `4` in a script with
 an `if __name__ == "__main__":` guard enables parallel execution.

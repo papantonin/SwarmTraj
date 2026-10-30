@@ -8,7 +8,7 @@ command remains unchanged when `--num-drones` is omitted.
 ```bash
 .venv/bin/python examples/px4_gazebo.py --num-drones 4 \
   --edit-scenario --run --gui --gpu \
-  --scenario examples/scenarios/px4_four_loiter.json --timeout 1200
+  --scenario examples/scenarios/px4_four_loiter_cpp.json --timeout 1200
 ```
 
 The example retains the two original solids and the additional cylinder at
@@ -33,7 +33,10 @@ Closing it cancels without starting the simulator. The scenario schema is
 `mission.numerical_backend`. Fleet-v2 retains its generator and selects Python.
 Legacy fleet-v1 files remain readable and select geometric/Python unless explicitly
 overridden with `--generator-mode physical_mission` before editing/planning.
-The editor checkbox offers the same choice; `--workers 1|2|0` configures catalog
+Fresh scenes use physical/C++ planning with one worker; saved records retain
+their choices. The new `px4_four_loiter_cpp.json` is an explicit v3 example;
+the original `px4_four_loiter.json` remains a historical v1 fixture.
+See [default selection](planner_defaults.md). The editor checkbox offers the same choice; `--workers 1|2|0` configures catalog
 processes (serial, two, or automatic). The **C++ construction (off: Python)**
 checkbox or `--numerical-backend cpp` selects native physical reference
 construction after `./scripts/build_native.sh`; it requires the physical

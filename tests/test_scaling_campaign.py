@@ -203,7 +203,7 @@ def test_live_progress_does_not_present_partial_campaign_as_validated(campaign):
              'expectation_met': True}]
     html = reporter.progress_html(manifest, rows)
     assert '1/230' in html and '2/259' in html
-    assert 'provisional progress' in html and 'Default remains geometric' in html
+    assert 'provisional progress' in html and 'Recorded generator/backend selections are preserved' in html
     assert 'Unsupported configuration requests' in html
 
 
@@ -239,6 +239,26 @@ def test_replay_audit_rejects_unrecorded_generator_override(campaign):
     changed, = campaign.replay_jobs({'jobs': [original]}, ['core'], 'physical_mission')
     assert reporter.input_differences(changed, original)
     assert not reporter.input_differences(changed, original, generator_mode='physical_mission')
+
+
+def test_saved_campaign_omissions_keep_historical_modes_and_explicit_choices(campaign):
+    job = campaign.make_jobs([1], [7], 0, ['core'])[0]
+    job['config'].pop('generator_mode')
+    job['config'].pop('numerical_backend')
+    original = json.dumps(job, sort_keys=True)
+    _, config = campaign.decode(job)
+    assert (config.generator_mode, config.numerical_backend) == ('geometric', 'python')
+    preserved, = campaign.replay_jobs({'jobs': [job]}, ['core'], None)
+    assert preserved['config']['generator_mode'] == 'geometric'
+    assert preserved['config']['numerical_backend'] == 'python'
+    assert json.dumps(job, sort_keys=True) == original
+    native, = campaign.replay_jobs({'jobs': [job]}, ['core'], 'physical_mission', 'cpp')
+    assert campaign.decode(native)[1].numerical_backend == 'cpp'
+    for field in ('generator_mode', 'numerical_backend'):
+        invalid = json.loads(json.dumps(preserved))
+        invalid['config'][field] = None
+        with pytest.raises(ValueError, match='explicit'):
+            campaign.decode(invalid)
 
 
 def test_campaign_cli_records_explicit_native_override(campaign, monkeypatch, tmp_path):

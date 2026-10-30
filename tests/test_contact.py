@@ -50,7 +50,7 @@ def test_old_seed19_obstacle_candidate_is_rejected_before_selection():
     from swarm_sim.trajectory2d.planning import _candidate, approach_angles, validate_individual
     from swarm_sim.trajectory2d.obstacles import load_obstacles
     from swarm_sim.trajectory2d.contact import plan_contact
-    config = Config(seed=19, dimensions=3, target=(500, 500), target_altitude=30, horizon=180,
+    config = Config(seed=19, dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=180,
                     descent_angle_deg=30, max_descent_rate=10, cruise_altitude_range=(40, 110),
                     approach_spread_deg=180, obstacle_routing='spatial',
                     obstacles=load_obstacles('examples/scenarios/static_obstacles.json'))

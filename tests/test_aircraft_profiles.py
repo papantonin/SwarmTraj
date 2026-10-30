@@ -28,14 +28,14 @@ def data():
 def test_file_reference_matches_factory_and_historical_effective_parameters():
     profile = load_aircraft_profile(REFERENCE)
     assert profile == reference_aircraft_profile()
-    config = Config(dimensions=3, max_descent_rate=10)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', max_descent_rate=10)
     assert profile.apply(config) == config
     assert pickle.loads(pickle.dumps(profile)) == profile
 
 
 def test_apply_preserves_mission_fields_and_enforces_new_physical_limits():
     profile = load_aircraft_profile(TRAINING)
-    original = Config(dimensions=3, target=(210, -70), horizon=120, max_descent_rate=10,
+    original = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(210, -70), horizon=120, max_descent_rate=10,
                       separation=12, position_error=1, clock_error=.2, max_altitude=160)
     bound = profile.apply(original)
     for name, value in asdict(original).items():
@@ -147,7 +147,7 @@ def test_python_numeric_validation_rejects_booleans_and_overflow():
         PerformanceLimits(max_climb_rate=10**10000)
 
 
-@pytest.mark.parametrize('config', (Config(), Config(dimensions=3, flight_model='legacy')))
+@pytest.mark.parametrize('config', (Config(), Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight_model='legacy')))
 def test_unsupported_runtime_backend_rejected(config):
     with pytest.raises(ValueError, match='coupled 3D'):
         reference_aircraft_profile().apply(config)
@@ -155,7 +155,7 @@ def test_unsupported_runtime_backend_rejected(config):
 
 def test_manifest_includes_matching_profile_before_hash_and_legacy_default_unchanged():
     profile = load_aircraft_profile(REFERENCE)
-    config = profile.apply(Config(dimensions=3))
+    config = profile.apply(Config(dimensions=3, generator_mode='geometric', numerical_backend='python'))
     result = Result('no_candidate', 'Synthetic serialization test')
     original = mission_document(result, config, ())
     assert 'aircraft_profile' not in original

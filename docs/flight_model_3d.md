@@ -86,7 +86,7 @@ braking or stall limits and may still yield no candidate.
 
 ## From a proposed path to an executable plan
 
-The following describes the default geometric generator. The opt-in
+The following describes the historical geometric generator. The default
 [`physical_mission` generator](phase2_kinodynamic.md) constructs its states and
 controls directly, bypassing the legacy vertical template and geometric time
 scaling. It uses the same physical dynamics and independent full-horizon

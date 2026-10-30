@@ -17,7 +17,7 @@ from swarm_sim.trajectory2d.planning import Config
 def test_integrated_pullout_at_report_speeds(speed):
     # Matches the reported geometric stress family (30 m target, -30 degrees).
     # The relevant descent-rate allowance is explicit, not silently relaxed.
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                     horizon=120., max_descent_rate=8., min_altitude=0.)
     result = simulate_pullout(speed, config)
     assert result is not None
@@ -38,14 +38,14 @@ def test_integrated_pullout_at_report_speeds(speed):
 
 
 def test_recovery_fails_closed_below_ground():
-    config = Config(dimensions=3, target_altitude=2., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=2., descent_angle_deg=30.,
                     horizon=120., max_descent_rate=8., min_altitude=0.)
     assert simulate_pullout(14., config) is None
     assert recovery_seed_acceleration(14., config) is None
 
 
 def test_recovery_does_not_mutate_limits():
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                     horizon=120., max_descent_rate=8.)
     before = replace(config)
     simulate_pullout(13., config)
@@ -54,13 +54,13 @@ def test_recovery_does_not_mutate_limits():
 
 def test_recovery_not_used_for_planar_or_level_flight():
     assert simulate_pullout(13., Config()) is None
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=0.)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=0.)
     assert recovery_seed_acceleration(13., config) is None
 
 
 @pytest.mark.parametrize('speed', [13.0, 14.0])
 def test_physical_seed_avoids_reported_template_rejection(speed):
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                     horizon=120., max_descent_rate=8.)
     rate = speed * np.tan(np.deg2rad(config.descent_angle_deg))
     def template_drop(acceleration):
@@ -72,7 +72,7 @@ def test_physical_seed_avoids_reported_template_rejection(speed):
 
 def test_opt_in_mode_does_not_change_default_or_allow_planar_usage():
     assert Config().generator_mode == 'geometric'
-    Config(dimensions=3, target_altitude=30., generator_mode='physical_recovery_seed')
+    Config(dimensions=3, numerical_backend='python', target_altitude=30., generator_mode='physical_recovery_seed')
     with pytest.raises(ValueError, match='generator_mode'):
         Config(generator_mode='physical_recovery_seed')
     with pytest.raises(ValueError, match='generator_mode'):
@@ -85,7 +85,7 @@ def test_pullout_matches_independently_written_unbanked_ode(speed, dt):
     from scipy.integrate import solve_ivp
     from swarm_sim.trajectory2d.dynamics import G
 
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                     horizon=120., max_descent_rate=8., dt=dt)
     trial = simulate_pullout(speed, config)
     assert trial is not None
@@ -109,19 +109,19 @@ def test_pullout_matches_independently_written_unbanked_ode(speed, dt):
 
 @pytest.mark.parametrize('speed', [0., -1., np.nan, np.inf, 7., 17.])
 def test_pullout_refuses_invalid_or_out_of_envelope_speed(speed):
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                     max_descent_rate=8.)
     assert simulate_pullout(speed, config) is None
 
 
 @pytest.mark.parametrize('angle', [0., -1., 90., np.nan, np.inf])
 def test_pullout_refuses_invalid_boundary_angle(angle):
-    config = Config(dimensions=3, target_altitude=30., max_descent_rate=8.)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., max_descent_rate=8.)
     assert simulate_pullout(13., config, angle_deg=angle) is None
 
 
 def test_cached_seed_respects_airbrake_and_descent_limits():
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                     max_descent_rate=8.)
     seed = recovery_seed_acceleration(13., config)
     assert seed is not None
@@ -133,7 +133,7 @@ def test_cached_seed_respects_airbrake_and_descent_limits():
 
 
 def test_pullout_arrays_are_read_only():
-    config = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                     max_descent_rate=8.)
     trial = simulate_pullout(13., config)
     assert trial is not None

@@ -18,7 +18,7 @@ from swarm_sim.trajectory2d.reservations import Occupancy
 
 
 def config(**kw):
-    values = dict(dimensions=3, target=(1320, 0), target_altitude=60, horizon=140,
+    values = dict(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(1320, 0), target_altitude=60, horizon=140,
                   activation_time=0, max_extra_loiter=0, cruise_altitude_range=(60, 60),
                   speed_profile='smooth', speed_profile_range=(10, 14),
                   reservation_policy='grid', passage_guidance='safe_windows')

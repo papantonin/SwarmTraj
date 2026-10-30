@@ -760,9 +760,9 @@ def main(argv=None):
     parser.add_argument('--camera', choices=['free', 'follow'], help='four-aircraft GUI camera: free overview (default) or drone-0 follow')
     parser.add_argument('--seed', type=int, help='PRNG seed; default 7, or the saved scenario seed')
     parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
-                        help='explicit scenario/editor generator override; saved v1 scenes remain geometric otherwise')
+                        help='fresh editor: physical_mission; explicit saved selections and historical v1 geometry are preserved')
     parser.add_argument('--numerical-backend', choices=['python', 'cpp'],
-                        help='physical reference construction backend; independent validation and PX4 control are unchanged')
+                        help='fresh physical editor: cpp; saved selections are preserved; python selects the reference planner; PX4 control is unchanged')
     parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--obstacles', type=Path, help='static box/cylinder JSON shared with Matplotlib; included in planning and Gazebo collisions, not certified PX4 avoidance')
     parser.add_argument('--airborne-start', action='store_true', help='experimental warm start: normal ground readiness/arming, one-shot physical initialization at the reference start; no cold in-air boot')

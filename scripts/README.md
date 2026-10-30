@@ -93,7 +93,9 @@ with all previous successes retained. That historical journal contains five
 censored planning timeouts. The [migration checks](../docs/generator_migration.md)
 now complete those inputs below 120 s, while retaining the original records.
 The migration guide records the historical fleet startup failure and subsequent
-editor/ordered-startup qualification separately. The default remains geometric;
+editor/ordered-startup qualification separately. Historical campaign inputs keep
+their recorded modes; [fresh coupled 3D defaults](../docs/planner_defaults.md)
+are now physical/C++;
 the [complete native planner qualification](../docs/native_planner.md) does not
 introduce a new PX4/Gazebo flight claim.
 

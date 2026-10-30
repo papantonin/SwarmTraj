@@ -182,7 +182,7 @@ def test_spawn_resumes_existing_catalog_and_read_only_plans():
 
 
 def test_four_coupled_aircraft_expand_conflicting_pair_and_execute():
-    config = Config(dimensions=3, target=(500, 300), target_altitude=30, horizon=150,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 300), target_altitude=30, horizon=150,
                     cruise_altitude_range=(40, 110), descent_angle_deg=30, max_descent_rate=10,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180, candidates=8,
                     planning_strategy="adaptive", initial_candidates=1, search_order="mrv")

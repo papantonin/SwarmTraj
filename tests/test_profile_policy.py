@@ -13,7 +13,7 @@ from swarm_sim.trajectory2d.profile_policy import families, family_config
 
 
 def mixed_config(**kw):
-    values = dict(dimensions=3, target=(500, 500), target_altitude=30, horizon=240,
+    values = dict(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=240,
                   activation_time=30, cruise_altitude_range=(30, 120), cruise_levels=2,
                   speed_profile='smooth', speed_profile_range=(10, 14),
                   planning_strategy='adaptive', initial_candidates=2, search_order='mrv',

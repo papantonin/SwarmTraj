@@ -32,7 +32,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.output.exists():
         parser.error('output must be a new directory')
-    base = Config(dimensions=3, target_altitude=30., descent_angle_deg=30.,
+    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
                   max_descent_rate=8., horizon=args.horizon, candidates=1, attempts=args.attempts,
                   cruise_altitude_range=(30., 120.), max_extra_loiter=0.)
     jobs = []

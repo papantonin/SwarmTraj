@@ -1,7 +1,8 @@
 # Phase 2 — physical recovery and complete individual mission construction
 
-The historical generator remains the default: `generator_mode="geometric"`.
-The opt-in `generator_mode="physical_mission"` constructs a complete individual
+New coupled 3D missions default to `generator_mode="physical_mission"` and
+`numerical_backend="cpp"`; [selection and archive rules](planner_defaults.md)
+preserve explicit historical requests. The physical generator constructs a complete individual
 mission directly through the seven-state point-mass model. It does not build a
 legacy vertical trapezoid or convert a pull-out altitude loss into a global
 vertical-acceleration coefficient. Independent physical, contact, obstacle and

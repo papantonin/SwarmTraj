@@ -80,6 +80,9 @@ def load_fleet(path):
             settings['generator_mode'] = 'geometric'
         if schema != SCHEMA:
             settings['numerical_backend'] = 'python'
+        if (settings['generator_mode'] not in ('geometric', 'physical_mission')
+                or settings['numerical_backend'] not in ('python', 'cpp')):
+            raise ValueError('Saved scenarios require explicit generator and backend selections.')
         settings['target'] = tuple(settings['target'])
         settings['obstacles'] = tuple(Obstacle(**o) for o in settings['obstacles'])
         if settings['cruise_altitude_range'] is not None:
@@ -371,9 +374,9 @@ def main(argv=None):
     parser.add_argument('--obstacles', type=Path)
     parser.add_argument('--seed', type=int)
     parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
-                        help='explicit generator override; saved v1 scenes remain geometric otherwise')
+                        help='fresh scene: physical_mission; explicit saved selections and historical v1 geometry are preserved')
     parser.add_argument('--numerical-backend', choices=['python', 'cpp'],
-                        help='physical reference construction backend; independent validation and PX4 control are unchanged')
+                        help='fresh physical scene: cpp; saved selections are preserved; python selects the reference planner; PX4 control is unchanged')
     parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--timeout', type=float, default=1200)
     parser.add_argument('--output', type=Path)

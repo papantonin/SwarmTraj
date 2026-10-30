@@ -100,10 +100,10 @@ def main():
     parser.add_argument("--candidate-guidance", choices=("none", "rejections"), default="none",
                         help="Use own rejection history to propose longer level settling or wider obstacle routes; validation unchanged")
     parser.add_argument("--generator-mode", choices=("geometric", "physical_mission", "physical_recovery_seed"),
-                        default="geometric", help="Historical geometry or experimental directly integrated physical mission; "
+                        help="Default: physical_mission in coupled 3D, geometric in planar/legacy modes; "
                         "physical_recovery_seed is a compatibility alias for physical_mission")
-    parser.add_argument('--numerical-backend', choices=('python', 'cpp'), default='python',
-                        help='physical planner backend; cpp includes proposals, construction, independent validation and selection; Python remains the reference')
+    parser.add_argument('--numerical-backend', choices=('python', 'cpp'),
+                        help='Default: cpp for physical coupled 3D, python otherwise; explicit python selects the reference planner; missing C++ fails with build instructions')
     parser.add_argument("--initial-candidates", type=int, default=4,
                         help="Initial catalog size and expansion batch in adaptive mode")
     parser.add_argument("--search-order", choices=("mrv", "id"), default="mrv",
@@ -114,8 +114,8 @@ def main():
                         help="Extra refinement-node cap, also limited by max-search-nodes; retain best feasible plan")
     parser.add_argument("--margin-expansion-rounds", type=int, default=1,
                         help="Maximum targeted catalog extensions after first success; 0 optimizes existing catalogs only")
-    parser.add_argument("--workers", type=int, default=0,
-                        help="Independent catalogue processes: 0 = auto, 1 = serial (default auto)")
+    parser.add_argument("--workers", type=int,
+                        help="Catalog processes: default 1 for C++, auto for Python; explicit 0 = auto, 1 = serial")
     parser.add_argument("--rollout-check-interval", type=int, default=16,
                         help="Batch size for identical rollout endpoint checks; 1 restores reference checking")
     parser.add_argument("--max-search-nodes", type=int, default=30000,
@@ -292,7 +292,8 @@ def main():
                         selection_policy=args.selection_policy, margin_search_nodes=args.margin_search_nodes,
                         margin_expansion_rounds=args.margin_expansion_rounds,
                         max_search_nodes=args.max_search_nodes, activation_time=args.activation_time,
-                        planning_workers=args.workers, rollout_check_interval=args.rollout_check_interval,
+                        planning_workers=1 if args.workers is None else args.workers,
+                        rollout_check_interval=args.rollout_check_interval,
                         separation=args.separation, clock_error=args.clock_bound,
                         position_error=args.position_bound, approach_spread_deg=args.approach_spread,
                         approach_assignment=args.approach_assignment,
@@ -306,6 +307,8 @@ def main():
                                            else 0 if args.descent_angle is None else args.descent_angle),
                         cruise_altitude_range=(tuple(args.cruise_range or (30, 120))
                             if args.dimensions == 3 and not args.manual_cruise and args.cruise_altitude is None else None))
+        if args.workers is None and config.numerical_backend == 'python':
+            config = replace(config, planning_workers=0)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     if aircraft_profile is not None:
@@ -329,6 +332,9 @@ def main():
                           for s, z, c in zip(snapshots, altitudes, cruise))
     try:
         check_execution_backend(config, args.tracking_controller, args.execution_backend)
+        if config.numerical_backend == 'cpp':
+            from swarm_sim.trajectory2d.native_planning import require_planner
+            require_planner()
     except (ValueError, RuntimeError) as error:
         parser.error(str(error))
     if args.gui and args.edit_scenario is not False and not args.pick_target:
@@ -353,7 +359,7 @@ def main():
         preparation = Preparation(args.upload_delay, args.ack_delay, args.activation_guard,
                                   args.planning_latency, tuple(args.missing_ack))
         result = prepare_mission(snapshots, config, preparation) if args.prepare_in_flight else plan_mission(snapshots, config)
-    except ValueError as error:
+    except (ValueError, RuntimeError) as error:
         parser.error(str(error))
     planning_elapsed = perf_counter() - planning_start
     print(f"Generation time: {planning_elapsed:.2f} s", flush=True)

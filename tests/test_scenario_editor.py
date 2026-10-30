@@ -132,7 +132,7 @@ def test_mouse_focus_hover_and_typing_queue_paints_without_blocking(editor, monk
 def test_per_drone_profile_loading_and_reset_are_transactional():
     root = Path(__file__).resolve().parents[1]
     initial = tuple(replace(s, altitude=30 + 25 * s.drone_id) for s in separate_loiter_snapshot())
-    editor = ScenarioEditor(initial, (140, 50), Config(dimensions=3))
+    editor = ScenarioEditor(initial, (140, 50), Config(dimensions=3, generator_mode='geometric', numerical_backend='python'))
     try:
         original = editor.config
         editor.profile_input.set_val(str(root / 'examples/aircraft/fixed_wing_training.json'))
@@ -271,7 +271,7 @@ def test_departure_delay_interval_validation_reset_and_launch(editor):
 def test_altitudes_common_destination_and_3d_initial_separation():
     snapshots = tuple(replace(s, altitude=30 + 25 * k, cruise_altitude=40 + 25 * k)
                       for k, s in enumerate(separate_loiter_snapshot()))
-    editor = ScenarioEditor(snapshots, (140, 50), Config(dimensions=3))
+    editor = ScenarioEditor(snapshots, (140, 50), Config(dimensions=3, generator_mode='geometric', numerical_backend='python'))
     try:
         editor.altitude_input.set_val("35")
         editor.cruise_input.set_val("50")
@@ -298,7 +298,7 @@ def test_altitudes_common_destination_and_3d_initial_separation():
 
 def test_automatic_cruise_controls_validation_and_manual_switch():
     snapshots = tuple(replace(s, altitude=30 + 25 * k) for k, s in enumerate(separate_loiter_snapshot()))
-    editor = ScenarioEditor(snapshots, (500, 300), Config(dimensions=3, target_altitude=30,
+    editor = ScenarioEditor(snapshots, (500, 300), Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30,
                             cruise_altitude_range=(40, 110)))
     try:
         assert editor.auto_cruise.get_status()[0]
@@ -331,7 +331,7 @@ def test_automatic_cruise_controls_validation_and_manual_switch():
 
 def test_coupled_editor_displays_total_airspeed_and_refuses_loaded_stall():
     from swarm_sim.trajectory2d import FlightLimits
-    config = Config(dimensions=3, flight=FlightLimits(stall_speed=8))
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', flight=FlightLimits(stall_speed=8))
     snapshots = tuple(replace(s.with_speed(8, config.limits), altitude=30) for s in separate_loiter_snapshot())
     editor = ScenarioEditor(snapshots, config.target, config)
     try:

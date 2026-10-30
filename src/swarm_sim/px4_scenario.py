@@ -109,6 +109,9 @@ def load_scenario(path):
             mission['generator_mode'] = 'geometric'
         if schema != SCHEMA:
             mission['numerical_backend'] = 'python'
+        if (mission['generator_mode'] not in ('geometric', 'physical_mission')
+                or mission['numerical_backend'] not in ('python', 'cpp')):
+            raise ValueError('Saved scenarios require explicit generator and backend selections.')
         mission['target'] = tuple(mission['target'])
         mission['obstacles'] = tuple(Obstacle(**o) for o in mission['obstacles'])
         if mission['cruise_altitude_range'] is not None:

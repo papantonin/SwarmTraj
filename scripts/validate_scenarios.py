@@ -37,7 +37,7 @@ class Scenario:
 
 
 def scenarios(workers=4, obstacles=()):
-    base = Config(dimensions=3, target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
+    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
                   cruise_altitude_range=(30, 120), planning_workers=workers,
                   planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
                   selection_policy='max_margin', conflict_guidance='witness', obstacle_routing='spatial')

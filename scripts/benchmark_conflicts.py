@@ -36,7 +36,7 @@ def main():
         "conflicts-" + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".json")
     if output.exists():
         parser.error("output must be a new file")
-    base = Config(dimensions=3, target_altitude=30, descent_angle_deg=30, max_descent_rate=10,
+    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, descent_angle_deg=30, max_descent_rate=10,
                   cruise_altitude_range=(40, 110), planning_strategy="adaptive", search_order="mrv",
                   planning_workers=args.workers, initial_candidates=args.initial_candidates,
                   selection_policy=args.selection_policy, obstacle_routing="spatial")

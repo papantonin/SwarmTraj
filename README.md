@@ -40,8 +40,9 @@ described below uses its own flight model rather than this PyBullet backend.
 
 ## Installation
 
-Requirements: Linux, Python 3.12 and a C/C++ compiler (`build-essential` on
-Ubuntu). With Python 3.11+, PyBullet may be compiled during installation.
+Requirements: Linux, Python 3.12+, a C++20 compiler and CMake 3.20+
+(`build-essential`, `cmake` and Python development headers on Ubuntu).
+With Python 3.11+, PyBullet may be compiled during installation.
 
 ```bash
 chmod +x scripts/setup.sh
@@ -53,18 +54,20 @@ The setup script pins a specific `gym-pybullet-drones` commit and does not
 install its large optional reinforcement-learning dependencies (PyTorch and
 Stable-Baselines3). These can be installed separately if RL is needed later.
 
-The physical trajectory generator also has an optional C++20 backend. Build it
-with `./scripts/build_native.sh`, then select
-`--generator-mode physical_mission --numerical-backend cpp --workers 1` in the
-trajectory CLI. C++ now covers physical proposals, construction, independent
+New coupled 3D missions default to physical generation with the C++20 planner
+and one worker. The setup script builds the extension; existing environments
+can run `./scripts/build_native.sh`. C++ covers physical proposals, construction, independent
 validation, catalogs and joint selection; one worker uses a complete native
-mission call. Python remains the default and reference validator. See
+mission call. Python provides the interface and explicit reference backend;
+select `--numerical-backend python` for it, or `--generator-mode geometric`
+for the historical generator. See [default selection and compatibility](docs/planner_defaults.md),
 [build instructions and measured results](docs/native_kernel.md) and the
 [full-planner migration](docs/native_planner.md).
 
 The independent `--execution-backend cpp` option also compiles constrained
 own-state tracking and simulator propagation for coupled 3D plans. Both backend
-choices default to Python; global execution observation remains Python.
+choices are independent: local execution still defaults to Python, and global
+execution observation remains Python.
 
 ## Running the examples
 

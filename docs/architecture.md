@@ -13,7 +13,7 @@ flowchart TD
     Mode{"Generator choice: coupled 3D"}
     Geom["geometric: routing/vertical proposals, then coupled physical rollout"]
     Physical["physical_mission: integrated loiter, levels, transit, approach, passage, pull-out, recovery"]
-    Backend{"Physical planner: Python default or explicit C++20 numerical pipeline"}
+    Backend{"Physical planner: default C++20 numerical pipeline; explicit Python reference"}
     Individual{"Independent individual validation: forces/envelope, contact, obstacles, full horizon"}
     Catalog["Deterministic per-aircraft catalogs; serial or spawn processes"]
     Joint["Bounded joint search; full-horizon distance and optional reservations"]

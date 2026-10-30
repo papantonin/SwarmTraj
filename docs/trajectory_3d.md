@@ -15,8 +15,10 @@ flight-path angle, bank, lift, thrust and drag are linked. See the
 [flight model, equations and limitations](flight_model_3d.md).
 The older 2.5D kinematic model remains available with `--flight-model legacy`.
 Default physical parameters are illustrative, not those of a real aircraft.
-The launcher defaults to multiprocess catalog generation; `--workers 1`
-keeps it sequential. See the [performance measurements and settings](planning_performance.md).
+The launcher defaults to physical C++ planning with one worker. Explicit
+`--workers 0` selects automatic spawn workers; Python planning retains its
+automatic CLI worker default. See [defaults and compatibility](planner_defaults.md)
+and [performance measurements and settings](planning_performance.md).
 Catalogs are built adaptively by default, with most-constrained-first search
 and detailed rejection/conflict reports. See
 [adaptive planning and diagnostics](adaptive_planning.md). The fixed-catalog
@@ -38,7 +40,7 @@ uses reservation windows during expanded-candidate generation. See
 `--profile-policy adaptive_mixed` explicitly allows simple and rich candidates
 in one adaptive catalog; `--cruise-levels` then sets a maximum. Without that
 flag, profile requests remain strict. See [mixed catalogs](mixed_profiles.md).
-`--passage-guidance safe_windows` additionally fits local speed variation to
+With `--generator-mode geometric`, `--passage-guidance safe_windows` fits local speed variation to
 [intermediate cell windows](intermediate_passages.md); it requires explicit
 smooth-speed permission and grid reservations, and remains off by default.
 `--candidate-guidance rejections` separately adapts initial and expanded
@@ -47,21 +49,22 @@ proposals from their own rejection history; see the
 
 Interface labels and runtime messages are in English.
 
-An experimental `--generator-mode physical_mission` constructs complete
+The default `physical_mission` generator constructs complete
 individual missions directly through the coupled physical model, including an
 explicit recovery primitive from the actual passage state. It supports one to
 three cruise levels and constant or smooth airspeed references, including strict
 and explicitly declared mixed profiles. Geometric intermediate-passage fitting
-is unsupported and rejected explicitly. The historical `geometric` mode remains
-the default.
+is unsupported and rejected explicitly. Select `--generator-mode geometric`
+to use the historical generator, including geometric passage-window fitting.
 See [physical construction, scope and verification](phase2_kinodynamic.md).
 The editor's **Physical generator** checkbox selects the same mode; it is
 disabled for planar/legacy flight. See the [migration guide](generator_migration.md)
 for versioned shared scenarios and the separate PX4/Gazebo workflow.
 
-The physical generator can explicitly use `--numerical-backend cpp` after
-`./scripts/build_native.sh`. Python remains the default and independent
-reference validator. The native backend covers physical proposals, construction,
+The physical generator defaults to `--numerical-backend cpp`; run
+`./scripts/build_native.sh` in an existing environment. Explicit
+`--numerical-backend python` selects the independent reference implementation.
+The native backend covers physical proposals, construction,
 independent validation, catalogs and bounded joint selection. With `--workers 1`
 the complete mission planner runs in one native call; multiple workers retain
 Python's deterministic spawn scheduling. Both paths retain independent final checks;

@@ -53,7 +53,7 @@ def test_v3_backend_and_strict_v1_v2_meanings(tmp_path, monkeypatch, module, fac
 
 
 def test_editor_switches_and_resets_generator_without_changing_constraints():
-    config = Config(dimensions=3, target_altitude=30.)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30.)
     editor = ScenarioEditor(separate_loiter_snapshot(), config.target, config)
     try:
         assert editor.generator.active
@@ -67,7 +67,7 @@ def test_editor_switches_and_resets_generator_without_changing_constraints():
 
 
 def test_editor_rejects_unsupported_physical_passage_request_without_fallback():
-    config = Config(dimensions=3, speed_profile='smooth', speed_profile_range=(10.,14.),
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', speed_profile='smooth', speed_profile_range=(10.,14.),
                     reservation_policy='grid', passage_guidance='safe_windows')
     editor = ScenarioEditor(separate_loiter_snapshot(), config.target, config)
     try:
@@ -124,7 +124,7 @@ def test_historical_single_bench_rejects_generator_override(tmp_path):
 def test_editor_backend_selection_reset_and_incompatible_generator(monkeypatch,original_cpp):
     from swarm_sim.trajectory2d import native_backend
     monkeypatch.setattr(native_backend,'require_native',lambda:None)
-    base=Config(dimensions=3,target_altitude=30.)
+    base=Config(dimensions=3, generator_mode='geometric', numerical_backend='python',target_altitude=30.)
     config=replace(base,generator_mode='physical_mission',numerical_backend='cpp') if original_cpp else base
     editor=ScenarioEditor(separate_loiter_snapshot(),config.target,config)
     try:
@@ -152,7 +152,7 @@ def test_editor_missing_native_module_rejects_selection_and_launch(monkeypatch):
     from swarm_sim.trajectory2d import native_backend
     def unavailable():raise RuntimeError('C++ backend unavailable; build_native.sh')
     monkeypatch.setattr(native_backend,'require_native',unavailable)
-    config=Config(dimensions=3,generator_mode='physical_mission',target_altitude=30.)
+    config=Config(dimensions=3, numerical_backend='python',generator_mode='physical_mission',target_altitude=30.)
     editor=ScenarioEditor(separate_loiter_snapshot(),config.target,config)
     try:
         editor.backend.set_active(0)

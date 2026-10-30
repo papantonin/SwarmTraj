@@ -36,7 +36,7 @@ def test_position_errors_are_bounded_seeded_and_independent_of_fleet_membership(
 
 
 def test_wind_estimator_uses_only_own_model_motion_and_ignores_constant_position_bias():
-    config = Config(dimensions=3)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
     state = np.array([0., 0., 80., 12., .2, 0., .4])
     control = trim_control(state, config.flight)
     estimator = WindEstimator()
@@ -53,7 +53,7 @@ def test_wind_estimator_uses_only_own_model_motion_and_ignores_constant_position
 
 
 def test_combined_command_is_protected_across_the_whole_held_interval_without_state_clipping():
-    config = Config(dimensions=3)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
     state = np.array([0., 0., 80., 12., .2, 0., .4])
     original = state.copy()
     requested = np.array([1., 0., 2., .5])
@@ -68,7 +68,7 @@ def test_combined_command_is_protected_across_the_whole_held_interval_without_st
 
 
 def test_no_verified_fallback_is_reported_instead_of_repairing_the_physical_state():
-    config = Config(dimensions=3)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
     state = np.array([0., 0., -1., 12., 0., 0., 0.])
     command, intervened, feasible = protect_control(state, trim_control(state, config.flight), config, .2)
     assert intervened and not feasible
@@ -78,7 +78,7 @@ def test_no_verified_fallback_is_reported_instead_of_repairing_the_physical_stat
 
 
 def test_diagnostic_margins_match_the_existing_physical_checker():
-    config = Config(dimensions=3)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
     states = np.array([[0., 0., 80., 12., .2, 0., .4], [0., 0., 80., 12., .2, 0., .4]])
     controls = np.array([trim_control(states[0], config.flight)] * 2)
     assert envelope_ok(states, controls, config)
@@ -119,7 +119,7 @@ def test_clock_and_tracking_assumption_losses_have_explicit_time_and_id():
 
 @pytest.fixture(scope='module', params=[7, 19])
 def regression_scene(request):
-    config = Config(seed=request.param, dimensions=3, target_altitude=30, horizon=150,
+    config = Config(seed=request.param, dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, horizon=150,
                     max_descent_rate=10, descent_angle_deg=30, cruise_altitude_range=(30, 120),
                     approach_spread_deg=180, planning_strategy='adaptive', search_order='mrv')
     snapshots = tuple(replace(s, altitude=30 + 25*k) for k, s in enumerate(separate_loiter_snapshot(4)))

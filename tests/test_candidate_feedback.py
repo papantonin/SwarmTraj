@@ -9,7 +9,7 @@ from swarm_sim.trajectory2d.obstacles import Obstacle
 
 
 def rich_config(**kw):
-    values = dict(dimensions=3, cruise_altitude_range=(30, 120), cruise_levels=2,
+    values = dict(dimensions=3, generator_mode='geometric', numerical_backend='python', cruise_altitude_range=(30, 120), cruise_levels=2,
                   obstacles=(Obstacle.box(100, 100, 0, 120, 120, 100),))
     return Config(**(values | kw))
 

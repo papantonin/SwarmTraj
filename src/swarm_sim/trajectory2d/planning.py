@@ -45,7 +45,7 @@ class Config:
     flight_model: str = "point_mass"
     flight: FlightLimits = field(default_factory=FlightLimits)
     approach_assignment: str = "geometric"
-    planning_workers: int = 1  # API stays safe in interactive/embedded callers; CLI uses auto (0).
+    planning_workers: int = 1  # Safe serial default; explicit 0 selects automatic spawn workers.
     rollout_check_interval: int = 16  # Same endpoint checks, batched; 1 reproduces the reference path.
     planning_strategy: str = "fixed"  # Library compatibility; CLI defaults to adaptive.
     initial_candidates: int = 4
@@ -72,8 +72,8 @@ class Config:
     profile_policy: str = "strict"  # Mixed families are an explicit opt-in, not a fallback.
     passage_guidance: str = "none"  # Offline intermediate-cell speed fitting, not departure retiming.
     candidate_guidance: str = "none"  # Own-rejection reference adjustments; never weaker validators.
-    generator_mode: str = "geometric"  # Opt-in direct physical missions; historical default unchanged.
-    numerical_backend: str = "python"  # Optional native kernels; Python validation remains an explicit oracle.
+    generator_mode: str | None = None  # Omitted: physical in coupled 3D, geometric in historical modes.
+    numerical_backend: str | None = None  # Omitted: C++ for physical 3D, Python otherwise; resolved below.
     aircraft_profiles: tuple = ()  # Complete explicit (drone_id, AircraftProfile) bindings; offline only.
     aircraft_radius: float = 0.0  # Enclosing sphere; zero preserves the legacy point-aircraft model.
 
@@ -114,6 +114,13 @@ class Config:
         return max(self.max_climb_rate, self.descent_rate_limit)
 
     def __post_init__(self):
+        # Resolve omitted choices once. Persisted/replaced configurations retain
+        # their concrete selections; archived records must supply historical defaults.
+        if self.generator_mode is None:
+            object.__setattr__(self, 'generator_mode', 'physical_mission' if self.coupled_flight else 'geometric')
+        if self.numerical_backend is None:
+            object.__setattr__(self, 'numerical_backend',
+                               'cpp' if self.coupled_flight and self.generator_mode != 'geometric' else 'python')
         from .aircraft_profiles import AircraftProfile
         if (not isinstance(self.aircraft_profiles, tuple)
                 or any(not isinstance(pair, tuple) or len(pair) != 2 or type(pair[0]) is not int

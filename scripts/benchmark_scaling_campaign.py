@@ -66,7 +66,8 @@ def check_sources(manifest):
 
 
 def base_case(n, seed):
-    config = Config(dimensions=3, target_altitude=30, max_descent_rate=10,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python',
+        target_altitude=30, max_descent_rate=10,
         descent_angle_deg=30, cruise_altitude_range=(30, 120), seed=seed,
         planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
         selection_policy='max_margin', conflict_guidance='witness', obstacle_routing='spatial')
@@ -182,6 +183,11 @@ def make_jobs(counts, seeds, random_scenes, suites):
 
 def decode(job):
     fields = dict(job['config'])
+    fields.setdefault('generator_mode', 'geometric')
+    fields.setdefault('numerical_backend', 'python')
+    if (fields['generator_mode'] not in ('geometric', 'physical_mission', 'physical_recovery_seed')
+            or fields['numerical_backend'] not in ('python', 'cpp')):
+        raise ValueError('Saved campaign requires explicit planner selections.')
     fields['limits'] = Limits(**fields['limits'])
     fields['flight'] = FlightLimits(**fields['flight'])
     fields['obstacles'] = tuple(Obstacle(**o) for o in fields['obstacles'])
@@ -199,7 +205,8 @@ def replay_jobs(reference, suites, generator_mode, numerical_backend=None):
     if not jobs or len({j['id'] for j in jobs}) != len(jobs):
         raise ValueError('reference must contain a nonempty unique job selection')
     for job in jobs:
-        # This additive field was absent in the historical pure Python schema.
+        # Missing fields retain historical meaning independently of fresh defaults.
+        job['config'].setdefault('generator_mode', 'geometric')
         job['config'].setdefault('numerical_backend', 'python')
         if generator_mode is not None:
             job['config']['generator_mode'] = generator_mode

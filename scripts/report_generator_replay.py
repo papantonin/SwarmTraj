@@ -49,7 +49,7 @@ def progress_html(manifest, rows):
 {len(rows)}/{len(manifest['jobs'])} total jobs recorded, including controls and replays.</p>
 <p>Validated so far: {counts['validated']}. Negative controls matched:
 {sum(r.get('expectation_met') is True for r in controls)}/{len(controls)} recorded.</p>
-<ul>{statuses}</ul><p>Default remains geometric. This is provisional progress, not a qualification report.
+<ul>{statuses}</ul><p>Recorded generator/backend selections are preserved. This is provisional progress, not a qualification report.
 Unsupported configuration requests, if any, remain explicit rejections in the
 230-mission denominator. A parsed configuration is not a validated trajectory.</p>
 <p>Original snapshots, seeds, physical limits, margins, candidate/attempt budgets and
@@ -319,7 +319,7 @@ numerical backend override: {escape(str(manifest['reference'].get('numerical_bac
 catalog processes override: {escape(str(manifest['reference'].get('planning_workers_override')))}
 (saved serial/spawn replay assignments retained).
 {len(rows)}/{len(jobs)} total jobs recorded.</p>
-<p class="decision"><b>Default retained: geometric.</b></p><ul>{reasons_html}</ul>
+<p class="decision"><b>Recorded generator/backend selections are preserved; this report does not change defaults.</b></p><ul>{reasons_html}</ul>
 <table><tr><th>Aircraft</th><th>Historical validated</th><th>Replay validated</th>
 <th>Gained</th><th>Lost</th><th>Planning timeouts</th></tr>{''.join(table)}</table>
 <p>Old: {result['old_validated']}/{len(comparison)}. New: {result['new_validated']}/{len(comparison)}.

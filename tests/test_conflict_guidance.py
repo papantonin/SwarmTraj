@@ -37,7 +37,7 @@ def test_witness_is_symmetric_and_reports_sample_not_collision_root():
 
 
 def test_hints_respect_cruise_and_departure_bounds_and_separate_ties():
-    config = Config(dimensions=3, cruise_altitude_range=(40, 110), min_extra_loiter=2, max_extra_loiter=4)
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', cruise_altitude_range=(40, 110), min_extra_loiter=2, max_extra_loiter=4)
     first, second = hint(), hint(1)
     assert first.modes(config) == ["altitude", "lateral", "departure"]
     assert first.cruise_level(40, 110) == 40
@@ -148,7 +148,7 @@ def test_guided_catalog_spawn_is_deterministic_and_plans_stay_readonly():
 
 
 def test_four_drone_guided_expansion_revalidates_and_is_spawn_reproducible():
-    config = Config(dimensions=3, target=(500, 300), target_altitude=30, horizon=150,
+    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 300), target_altitude=30, horizon=150,
                     cruise_altitude_range=(40, 110), descent_angle_deg=30, max_descent_rate=10,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180, candidates=8,
                     planning_strategy="adaptive", initial_candidates=1, search_order="mrv",
