@@ -1,12 +1,14 @@
-# Optional C++20 physical construction kernel
+# Optional C++20 numerical kernels
 
 The `physical_mission` generator can use an explicit C++ numerical backend.
 Python remains the default and the independent validation reference. The
 standalone library covers seven-state flight dynamics, held-control RK4,
 construction envelope samples, local construction guidance, terminal fixtures,
 pull-out and complete physical candidate construction. Proposal sampling,
-per-aircraft random streams, routing hints, catalogs, joint selection, execution,
-visualization and reports remain in Python.
+per-aircraft random streams, routing hints, catalogs, joint selection,
+visualization and reports remain in Python. A separate opt-in execution backend
+now covers constrained own-state control and sampled simulator propagation.
+Independent candidate validation and global execution observation remain Python.
 
 ## Build and run
 
@@ -17,6 +19,7 @@ Python development headers are required for the local extension build:
 ./scripts/build_native.sh
 .venv/bin/python examples/trajectory_3d.py --no-gui \
   --generator-mode physical_mission --numerical-backend cpp --workers 1 \
+  --execution-backend cpp \
   --output results/native-example
 ```
 
@@ -57,7 +60,8 @@ cmake --build build/native-check --parallel 2
 ctest --test-dir build/native-check --output-on-failure
 ```
 
-The public C++ interface is `native/include/swarmtraj/flight.hpp`. Its numerical
+The public C++ interfaces are `native/include/swarmtraj/flight.hpp` and
+`native/include/swarmtraj/execution.hpp`. Their numerical
 functions expect finite, physically valid inputs and resolved own-aircraft
 parameters. The Python boundary validates buffer sizes, values and configuration;
 it accepts native float64 C-contiguous buffers without implicit casting. The
@@ -103,10 +107,80 @@ No native thread pool has been added. Existing deterministic spawn-based catalog
 workers remain available. Fast native candidates can make pool startup dominate;
 measure `--workers 1` before requesting more processes.
 
+## Optional local execution kernel
+
+`simulate(plans, config, execution_backend="cpp")` and the trajectory CLI's
+`--execution-backend cpp` select the execution kernel independently of
+`Config.numerical_backend`. Both default to Python. C++ execution supports
+coupled 3D plans made by either generator, with the `constrained` controller.
+Planar, legacy-flight and `--tracking-controller legacy` combinations reject
+this option explicitly. A missing extension or missing `execution_api=1`
+capability raises an error; rebuild an older extension before using it.
+The editor's construction checkbox and PX4 scenario schema retain their existing
+construction-only meaning. This option does not port PX4 controllers or Gazebo.
+
+At each actuator update, Python samples the own plan and averages feedforward
+over the own local-clock interval. One native call then updates the own-motion
+wind estimate, computes nominal and measured-state guidance, combines the
+command and applies held-control protection. The estimate uses only the previous
+own measurement and applied command. The controller API has no true simulator
+wind or fleet-state input, and rejects a supplied true-wind option.
+
+Protection retains the same actuator/bank clipping, **21 inclusive samples**,
+**four RK4 subdivisions**, envelope tolerance **1e-8**, verified trim fallback
+and **ten** blend trials as Python. Failure to verify a fallback still
+invalidates execution; no physical state is clipped. This is sampled protection,
+not a certified invariant set or emergency collision avoidance.
+
+A separate native simulator call integrates each requested sample duration
+independently from the interval's initial state, with four RK4 subdivisions and
+the simulator-only disturbance. The Python scheduler still owns asynchronous
+clock switches, sensor RNG draws and both incoming/outgoing boundary records.
+Python retains full-horizon pair/obstacle checks, contact reintegration, envelope
+diagnostics, tube/clock assumptions and final acceptance. The native kernel does
+not choose its own acceptance criteria or bypass observer checks.
+
+Execution reports record `execution_backend` and, for C++, the actual binary and
+source identity. This runtime choice does not rewrite a saved plan or its
+canonical mission hash. The extension ABI remains 1 for existing construction
+operations; `execution_api=1` identifies the added execution operations.
+
+Replay identical saved plans in fresh serialized processes with:
+
+```bash
+.venv/bin/python scripts/benchmark_native_execution.py \
+  --missions results/my-run/mission.json --repeats 3 \
+  --output results/native-execution-paired
+# Or reuse the saved campaign's missions that have execution expectations:
+.venv/bin/python scripts/benchmark_native_execution.py \
+  --campaign results/native-development-20261029-185306/scaling \
+  --output results/native-execution-campaign
+```
+
+This runner verifies canonical mission hashes and exact plan reconstruction,
+freezes current sources and binary identity, and rejects changed plans. It
+compares every discrete report decision/event and numeric telemetry within
+absolute `1e-8` (report floats also allow relative `1e-10`). It checks historical
+acceptance/failure lists where available and preserves errors/timeouts. Its
+single-aircraft absent-pair distance is explicitly `+inf`; only this matching
+sentinel is allowed, while nonfinite physical states or multi-aircraft distances
+fail comparison. `--reanalyze --output <existing-run>` can recheck saved
+measurements after changing only the analysis runner. It verifies unchanged
+runtime sources, binary, mission inputs and journal/worker agreement, records
+old/new runner hashes and telemetry hashes, and writes a separate
+`reanalysis.json` while preserving the original summary. Its
+timing covers full `simulate()`, including the unchanged Python observer;
+imports, artifact export and plotting are outside that timer. Peak RSS covers
+the whole fresh Python process and retained result arrays, not native scratch
+alone. Common-airframe saved campaigns are supported; per-ID profile replay is
+explicitly rejected by this benchmark rather than discarded by its decoder.
+Dedicated execution regressions cover resolved own-aircraft profiles.
+
 ## Verification and paired measurements
 
 ```bash
-./scripts/test.sh tests/test_native_backend.py
+./scripts/test.sh tests/test_native_backend.py tests/test_native_execution.py \
+  tests/test_execution_boundaries.py tests/test_native_execution_benchmark.py
 ./scripts/test.sh
 .venv/bin/python scripts/benchmark_native.py \
   --output results/native-paired --repeats 3
@@ -161,7 +235,7 @@ workers the native times were 1.30, 1.43 and 12.05 s, illustrating spawn costs.
 RSS includes interpreter/imports and allocator state; there is no demonstrated
 whole-process memory reduction. Public retained array sizes are unchanged.
 
-### Complete headless pipeline
+### Historical headless pipeline with construction-only C++
 
 A subsequent experiment in `results/system-impact-20261029-195118/` measures
 the existing CLI through planning, Python execution/observation, JSON/CSV
@@ -224,6 +298,89 @@ the geometric/Python defaults and do not establish PX4/Gazebo qualification.
 
 The kernel removes Python small-array allocation churn in the hot loop. It
 does not remove interpreter/process memory, combinatorial search complexity or
-the bounded proposal catalog's limitations. Execution tracking and the geometric
-converter are future ports. No RK4 error certificate, real-aircraft guarantee or
+the bounded proposal catalog's limitations. Execution tracking now has the
+separate optional kernel described above; the geometric converter remains
+Python. No RK4 error certificate, real-aircraft guarantee or
 PX4/Gazebo timing/separation claim follows from this implementation.
+
+## Local execution qualification (30 October 2026)
+
+Evidence is under `results/native-execution-20261030-084101/`. The complete
+suite passed **992 tests in 958.23 s**, with the four existing Gymnasium
+float32-bound warnings. Five focused benchmark-analysis tests passed after the
+analysis-only correction described below. Both standalone C++ tests passed in
+Release and under ASan/UBSan. Pure Python and native wheels were built and
+imported outside the checkout; the native wheel also built from the source
+archive with matching numerical source identity.
+
+The saved 24-mission execution matrix was replayed through both backends without
+replanning: **72 pairs / 144 executions**, with 24 nominal acceptances, 24
+gust/sensor acceptances and 24 outside-clock rejections per backend. All discrete
+report decisions, event identities and historical acceptance/failure lists
+match. The maximum component difference across compared arrays is `4.10e-12`,
+below the predeclared `1e-8` threshold. Safety-filter tests additionally exercise
+verified blends, failed trim fallback, boundary classifications, own-aircraft
+profiles, fleet/alone isolation and both hidden actuator-switch sides. No
+margin, sample count, tolerance, clock schedule or physical limit was relaxed.
+
+The original campaign summary is retained as a failed **analysis**: it treated
+the single-aircraft absent-pair `+inf` distance as invalid numerical telemetry.
+`campaign/reanalysis.json` fixes only that sentinel handling, records both runner
+hashes and telemetry hashes, and verifies unchanged runtime sources/binary,
+missions and journal/worker agreement. `campaign/measurement-runner.py` matches
+the original immutable manifest hash exactly. Physical NaNs/infinities and
+multi-aircraft nonfinite distances still fail. A fresh three-profile
+single-aircraft paired run also passes with the corrected runner.
+
+The separate `paired-final/` experiment uses three fresh serialized processes
+per backend/case, alternating order, after the test suite and campaign finish.
+Hardware is the same Intel Core i3-1115G4, two cores/four logical CPUs, Linux
+x86-64, CPython 3.12, GCC 13.3, with strict FP and one BLAS/OpenMP thread.
+Both backends receive the exact same saved three-aircraft plans, disturbances,
+sensor seeds and clock settings. These means cover **full `simulate()` including
+the independent Python observer**, excluding imports/export/plotting:
+
+| Saved plan / execution profile | Python mean | C++ mean | Wall-time ratio | CPU-time reduction | Process peak RSS, Python / C++ |
+|---|---:|---:|---:|---:|---:|
+| Reference, nominal, 90 s horizon | 3.507 s | 0.809 s | 4.33x | 76.7% | 87.5 / 88.2 MiB |
+| Reference, gust/sensor/clock | 5.754 s | 1.142 s | 5.04x | 80.0% | 88.9 / 89.3 MiB |
+| Rich, nominal, 210 s horizon | 8.077 s | 1.843 s | 4.38x | 77.3% | 103.3 / 103.7 MiB |
+| Rich, gust/sensor/clock | 12.904 s | 2.698 s | 4.78x | 79.1% | 106.4 / 107.4 MiB |
+
+All 12 pairs match reports and arrays (maximum `1.82e-12`). Retained evaluation
+array bytes are identical: 2,232,496 for the reference and 5,208,496 for rich
+plans. RSS is observed after simulation and compressed-array export in the fresh
+process; interpreter/imports, saved plans and observer data remain allocated.
+There is no demonstrated whole-process memory reduction. Native held-control
+scratch avoids Python temporary-array churn, but the public histories retain
+their existing shape. Desktop load is uncontrolled and three repeats are means,
+not percentile/deadline guarantees. Horizons and controller update schedules
+remain unchanged; this speeds offline computation, not simulated flight time.
+
+### Complete CLI through static 3D rendering
+
+`pipeline/` adds 18 fresh serialized CLI launches: three repeats of two saved
+three-aircraft configurations and three backend combinations. The CLI performs
+planning, full-horizon execution/observation, JSON/CSV export and static 3D PNG
+rendering. Mean entire-process times in this experiment are:
+
+| Scenario | Python construction + Python execution | C++ construction + Python execution | C++ construction + C++ execution |
+|---|---:|---:|---:|
+| Reference, 90 s horizon | 17.730 s | 7.377 s | 4.650 s |
+| Rich, 210 s horizon | 24.764 s | 12.814 s | 6.963 s |
+
+With both kernels the full pipeline improves by **3.81x / 3.56x** versus Python,
+or **1.59x / 1.84x** over C++ construction with the Python executor. Worker CPU
+time decreases from 17.346 to 4.394 s and from 24.405 to 6.600 s. Mean process
+peak RSS stays comparable: 140.0 to 140.1 MiB and 152.1 to 152.2 MiB. Static
+rendering and startup/export are now substantial remaining costs.
+
+All 18 runs retain validated planning/execution, identical inputs and matching
+candidate counts/search nodes. Maximum plan-array and CSV telemetry differences
+are `1.20e-12` and `2.96e-12`. C++ construction missions have exactly the same
+canonical hash with either runtime execution backend. The frozen source/binary
+manifest, per-stage timing wrappers, reports and images are retained alongside
+`summary.json`. These runs do not measure interactive animation FPS, Gazebo,
+networking, electrical energy or a real controller deadline. Differences from
+the historical construction-only experiment above reflect separate timing
+sessions; ratios here use paired measurements from this session.

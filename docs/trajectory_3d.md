@@ -65,6 +65,13 @@ validator. The native backend covers physical candidate construction;
 the editor and shared PX4 scenario v3 records retain the explicit choice. See the
 [native kernel guide](native_kernel.md) for supported modes and measurements.
 
+`--execution-backend cpp` independently selects the compiled constrained local
+controller and simulator integration for coupled 3D execution. Its default is
+`python`; both geometric and physical plans are supported. Global observation
+and final acceptance remain Python. This choice does not change the editor's
+construction checkbox or the separate PX4/Gazebo workflow. Planar, legacy flight
+and the historical legacy controller reject C++ execution explicitly.
+
 ## Preparing drones and destination
 
 The preparation map remains an XY projection: select a drone, then click on

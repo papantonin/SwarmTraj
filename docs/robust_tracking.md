@@ -55,6 +55,16 @@ feedback for comparisons. Local wind estimation and held-command protection are
 specific to coupled 3D mode; the historical planar/independent-Z controller is
 not upgraded into a coupled robust controller by this work.
 
+The optional `--execution-backend cpp` compiles this same constrained own-state
+update and sampled propagation. Reference sampling, clock/sensor scheduling,
+both sides of actuator switches and the independent global observer remain
+Python. The controller receives estimated wind from own motion, never the true
+simulator disturbance. Protection keeps all sample counts, integration steps,
+tolerances and failure rules above. Select it independently of construction's
+`--numerical-backend`; both default to Python. C++ execution rejects the legacy
+controller and planar/legacy flight modes. See [native execution](native_kernel.md#optional-local-execution-kernel)
+for build, identity and paired-replay commands.
+
 ## Reproducible disturbances
 
 | Option | Default | Meaning |
@@ -68,6 +78,7 @@ not upgraded into a coupled robust controller by this work.
 | `--position-noise` | 0 m | Radius of bounded independent position-noise draws |
 | `--disturbance-seed` | 0 | Per-drone noise seed, independent of the planning seed |
 | `--tracking-controller` | `constrained` | New executor or historical `legacy` comparison |
+| `--execution-backend` | `python` | `cpp` compiles constrained coupled-3D control and simulator integration; observer stays Python |
 
 Rotating wind retains the previous per-ID formula. Constant wind is common to
 all aircraft. Gust amplitude follows a bounded sinusoid between zero and the

@@ -21,7 +21,9 @@ flowchart TD
     Margin["Prefer larger robust slack if requested; preserve all required safety margins"]
     Mission["Immutable original mission; selected own plan per aircraft"]
     Fail["Explicit rejection / exhausted finite catalog / budget diagnostic"]
-    Own["Own-state, own-clock point-mass tracker; simulated sensors and disturbances"]
+    ExecBackend{"Offline point-mass execution: Python default or explicit C++20"}
+    Own["Own-state, own-clock point-mass tracker; no true wind or peer inputs"]
+    Motion["Separate simulator propagation; synthetic disturbance and own sensor sampling"]
     Eval["Observer-only execution checks: envelope, tracking, separation and obstacles"]
     Spatial["Derive own spatial PX4 mission and SDF: timing/separation claims are lost"]
     Native["Isolated pinned runtime: one Gazebo world, one or four independent PX4 instances"]
@@ -42,7 +44,8 @@ flowchart TD
     Expand -->|expand within budgets| Mode
     Expand -->|exhausted| Fail
     Fail -. scenario correction .-> Editor
-    Mission --> Own --> Eval --> Artifacts
+    Mission --> ExecBackend --> Own --> Motion --> Eval --> Artifacts
+    Motion -. own measured state only .-> Own
     Mission --> Spatial --> Native --> Gates --> Fly --> Observer --> End
     End --> Remove --> Artifacts
     End --> Land --> Artifacts
@@ -62,8 +65,13 @@ Multiple process counts preserve seeded streams, order and acceptance rules.
 
 The optional [C++20 kernel](native_kernel.md) runs complete physical construction
 loops with resolved own-aircraft parameters and immutable output buffers.
-Proposal RNG, independent validation, joint search and execution remain in
-Python. Its backend identity is included in native mission fingerprints. Shared
+Proposal RNG, independent validation and joint search remain Python. The
+independent `--execution-backend cpp` option compiles constrained local control,
+own-motion wind estimation, held-command protection and simulator propagation.
+Reference/clock scheduling, sensor RNG and independent global execution checks
+remain Python. True simulator wind enters only propagation. Construction
+identity belongs to the immutable mission; execution identity belongs to the
+runtime report. Shared
 PX4 editor scenarios v3 persist the selected construction backend; v1/v2 retain
 Python. Native fleet warm initialization is ordered by ID after the existing
 all-aircraft readiness/arming barriers, without claiming timed departure. The existing generated local PDF

@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import importlib.util
 
 from swarm_sim.trajectory2d import Config, Snapshot, Trajectory
 import swarm_sim.trajectory2d.execution as execution
@@ -26,18 +27,25 @@ def straight_flight():
     return config, plan
 
 
+@pytest.fixture(params=['python', 'cpp'])
+def backend(request):
+    if request.param == 'cpp' and importlib.util.find_spec('swarm_sim._trajectory_native') is None:
+        pytest.skip('optional C++ extension not built')
+    return request.param
+
+
 @pytest.mark.parametrize('drift', [-.0001, .0001])
-def test_valid_asynchronous_switches_keep_physical_acceptance(drift):
+def test_valid_asynchronous_switches_keep_physical_acceptance(drift, backend):
     config, plan = straight_flight()
-    report = execution.simulate((plan,), config, clock_offsets=[.015], clock_drifts=[drift]).report
+    report = execution.simulate((plan,), config, clock_offsets=[.015], clock_drifts=[drift], execution_backend=backend).report
     assert report['execution_validated'], report['execution_failures']
     assert report['physical_limits_verified'] and not report['safety_events']
 
 
 @pytest.mark.parametrize('boundary_index', [1, 2], ids=['incoming', 'outgoing'])
-def test_bad_command_on_either_side_of_hidden_switch_is_still_rejected(monkeypatch, boundary_index):
+def test_bad_command_on_either_side_of_hidden_switch_is_still_rejected(monkeypatch, boundary_index, backend):
     config, plan = straight_flight()
-    healthy = execution.simulate((plan,), config, clock_offsets=[.015])
+    healthy = execution.simulate((plan,), config, clock_offsets=[.015], execution_backend=backend)
     assert healthy.report['execution_validated']
     original = execution._coupled_interval
     injected_at = []
@@ -56,7 +64,7 @@ def test_bad_command_on_either_side_of_hidden_switch_is_still_rejected(monkeypat
         return states, controls, first, boundaries
 
     monkeypatch.setattr(execution, '_coupled_interval', inject_observed_boundary)
-    unsafe = execution.simulate((plan,), config, clock_offsets=[.015])
+    unsafe = execution.simulate((plan,), config, clock_offsets=[.015], execution_backend=backend)
     np.testing.assert_array_equal(healthy.flight_actual, unsafe.flight_actual)
     assert injected_at[0] == pytest.approx(.185)
     assert not np.any(np.isclose(unsafe.times, injected_at[0], atol=1e-10, rtol=0))

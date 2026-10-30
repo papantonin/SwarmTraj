@@ -26,6 +26,13 @@ def identity():
     return {**module.build_info(), 'binary_sha256': hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()}
 
 
+def require_execution_native():
+    module = require_native()
+    if module.build_info().get('execution_api') != 1:
+        raise RuntimeError('C++ execution kernel is unavailable; rebuild with ./scripts/build_native.sh')
+    return module
+
+
 def parameters(config):
     if config.aircraft_profiles:
         raise ValueError('native kernel requires resolved own aircraft physics')
@@ -71,6 +78,35 @@ def rollout(state, controls, config, *, check=True, substeps=2, wind=(0., 0., 0.
     """Whole held-command history in one native call; rejected prefixes are not plans."""
     return _path(evaluate('rollout', state, controls, config, check=int(check),
                          substeps=substeps, wind=_array(wind)))
+
+
+def propagate_samples(state, control, durations, config, *, substeps=4, disturbance=(0., 0., 0.)):
+    """Simulator-only independent integrations; disturbance is never a controller input."""
+    require_execution_native()
+    result = evaluate('propagate_samples', state, control, config, durations=_array(durations),
+                      substeps=substeps, wind=_array(disturbance))
+    return np.frombuffer(result, dtype=np.float64).reshape(-1, 7)
+
+
+def protect_control(state, requested, config, hold_dt):
+    require_execution_native()
+    result, intervened, feasible = evaluate('protect', state, requested, config, hold_dt=float(hold_dt))
+    return np.frombuffer(result, dtype=np.float64), bool(intervened), bool(feasible)
+
+
+def local_control_update(measured, reference, base, config, measurement_dt, hold_dt, *,
+                         estimated_wind, previous_measured=None, previous_control=None):
+    """Own measurement/reference/history only; no true wind, peers or observer state."""
+    require_execution_native()
+    options = dict(reference=_array(reference), estimated_wind=_array(estimated_wind),
+                   measurement_dt=float(measurement_dt), hold_dt=float(hold_dt))
+    if (previous_measured is None) != (previous_control is None):
+        raise ValueError('both own previous measurement and control are required')
+    if previous_measured is not None:
+        options.update(previous_measured=_array(previous_measured), previous_control=_array(previous_control))
+    command, estimate, intervened, feasible = evaluate('execution_control', measured, base, config, **options)
+    return (np.frombuffer(command, dtype=np.float64), np.frombuffer(estimate, dtype=np.float64),
+            bool(intervened), bool(feasible))
 
 
 def fixture(speed, config, cruise=None):

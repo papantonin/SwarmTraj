@@ -13,7 +13,7 @@ dynamics; ground effect, drag and downwash models are available in the backend.
 | [Documentation index](docs/README.md) | Usage, models, planning, validation and PX4/Gazebo guides |
 | [Script index](scripts/README.md) | Setup, benchmarks, campaigns, reports and visualizations |
 | `src/swarm_sim/` | Library code; coordinated trajectory planning is in `trajectory2d/` |
-| `native/` | Optional standalone C++20 physical construction kernel and Python binding |
+| `native/` | Optional C++20 physical construction/local execution kernels and Python binding |
 | `examples/` | Launchers, reusable scenarios, aircraft profiles and Gazebo fixtures |
 | `tests/` | Regression tests; run with `./scripts/test.sh` |
 | `results/` | Ignored local artifacts, including failed trials and original evidence |
@@ -58,6 +58,10 @@ with `./scripts/build_native.sh`, then select
 `--generator-mode physical_mission --numerical-backend cpp --workers 1` in the
 trajectory CLI. Python remains the default and independently validates native
 candidates. See [build instructions and measured results](docs/native_kernel.md).
+
+The independent `--execution-backend cpp` option also compiles constrained
+own-state tracking and simulator propagation for coupled 3D plans. Both backend
+choices default to Python; global execution observation remains Python.
 
 ## Running the examples
 

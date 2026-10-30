@@ -11,7 +11,7 @@ from time import perf_counter
 import numpy as np
 
 from swarm_sim.trajectory2d import Config, Limits, separate_loiter_snapshot, plan_mission
-from swarm_sim.trajectory2d.execution import simulate
+from swarm_sim.trajectory2d.execution import simulate, check_execution_backend
 from swarm_sim.trajectory2d.planning import mission_document
 from swarm_sim.trajectory2d.scenario_editor import edit_scenario
 from swarm_sim.trajectory2d.visualization import pick_target, visualize
@@ -175,6 +175,8 @@ def main():
     parser.add_argument("--disturbance-seed", type=int, default=0, help="Reproducible independent per-drone sensor-noise seed")
     parser.add_argument("--tracking-controller", choices=("constrained", "legacy"), default="constrained",
                         help="Own-state wind estimation and held-command protection (default), or historical feedback")
+    parser.add_argument('--execution-backend', choices=('python', 'cpp'), default='python',
+                        help='local controller and simulated motion kernel; cpp requires coupled 3D constrained tracking; observer remains Python')
     parser.add_argument("--playback-speed", type=float, default=4)
     parser.add_argument("--output", type=Path, help="Empty output directory; defaults to a new timestamped run")
     parser.add_argument("--gui", action=argparse.BooleanOptionalAction, default=True)
@@ -325,6 +327,10 @@ def main():
             parser.error("initial/cruise altitudes must be finite and within altitude limits")
         snapshots = tuple(replace(s, altitude=float(z), cruise_altitude=None if c is None else float(c))
                           for s, z, c in zip(snapshots, altitudes, cruise))
+    try:
+        check_execution_backend(config, args.tracking_controller, args.execution_backend)
+    except (ValueError, RuntimeError) as error:
+        parser.error(str(error))
     if args.gui and args.edit_scenario is not False and not args.pick_target:
         selected = edit_scenario(snapshots, config.target, config)
         if selected is None:
@@ -452,7 +458,7 @@ def main():
                           wind=args.wind, wind_model=args.wind_model, wind_heading_deg=args.wind_heading,
                           controller=args.tracking_controller, position_noise=args.position_noise,
                           position_biases=position_bias_vectors([p.drone_id for p in result.plans], args.position_bias, config.dimensions),
-                          disturbance_seed=args.disturbance_seed)
+                          disturbance_seed=args.disturbance_seed, execution_backend=args.execution_backend)
     evaluation.report.update({"planning_wall_time_s": planning_elapsed,
                               "planning_diagnostics": result.diagnostics,
                               "planning_timings": result.timings,

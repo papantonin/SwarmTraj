@@ -1,6 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "swarmtraj/flight.hpp"
+#include "swarmtraj/execution.hpp"
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
@@ -92,21 +93,45 @@ PyObject* evaluate(PyObject*,PyObject* args) {
         const auto subdivisions=count(options,"substeps",2);
         if(!subdivisions||subdivisions>1024||eps<0)throw std::invalid_argument("invalid subdivisions/tolerance");
         Control u{};std::vector<Control> commands;std::vector<Point> points;
-        State ref{};
+        State ref{};OwnHistory previous{};bool have_previous=false;
+        std::array<double,3> estimate{};std::vector<double> durations;
         if(operation=="rollout")commands=matrix<4>(uobj);
         else if(operation=="onward")points=matrix<2>(uobj);
         else if(operation=="guidance")ref=vector<7>(uobj);
-        else if(operation=="rhs"||operation=="propagate"||operation=="checked"||operation=="envelope")u=vector<4>(uobj);
+        else if(operation=="rhs"||operation=="propagate"||operation=="checked"||operation=="envelope"
+                ||operation=="held_control"||operation=="protect"||operation=="execution_control"||operation=="propagate_samples")u=vector<4>(uobj);
         else if(operation!="prefix"&&operation!="terminal"&&operation!="headroom"&&operation!="pullout")throw std::invalid_argument("unknown native operation");
         const bool check=option(options,"check",0)!=0;
         if(check&&(subdivisions!=2||wind!=std::array<double,3>{}))throw std::invalid_argument("checked nominal rollout requires two substeps and zero wind");
         const auto first=count(options,"first_step",0);
         const double yaw=option(options,"yaw",0), speed_ff=option(options,"speed_ff",0);
+        const double hold_dt=option(options,"hold_dt",p.dt),measurement_dt=option(options,"measurement_dt",p.dt);
+        if(operation=="held_control"||operation=="protect"||operation=="execution_control") {
+            if(hold_dt<=0||measurement_dt<=0)throw std::invalid_argument("execution intervals must be positive");
+        }
+        if(operation=="propagate_samples")durations=values(options,"durations");
+        if(operation=="execution_control") {
+            if(PyDict_GetItemString(options,"wind"))throw std::invalid_argument("local controller accepts no true simulator disturbance");
+            auto* reference=PyDict_GetItemString(options,"reference");
+            if(!reference)throw std::invalid_argument("execution controller requires own reference");
+            ref=vector<7>(reference);
+            if(ref[3]<=0)throw std::invalid_argument("reference airspeed must be positive");
+            auto* estimated=PyDict_GetItemString(options,"estimated_wind");
+            if(estimated)estimate=vector<3>(estimated);
+            auto* prior=PyDict_GetItemString(options,"previous_measured");
+            auto* applied=PyDict_GetItemString(options,"previous_control");
+            if((prior==nullptr)!=(applied==nullptr))throw std::invalid_argument("both own previous measurement and control are required");
+            if(prior) {
+                previous={vector<7>(prior),vector<4>(applied)};have_previous=true;
+                if(previous.measured[3]<=0)throw std::invalid_argument("previous airspeed must be positive");
+            }
+        }
         if(operation=="prefix"||operation=="onward") {
             if(!r.steps||r.speed<=0||r.minimum_hold<0||r.release<0||r.target_radius<=0||r.position_error<0||r.levels.empty()||r.levels.size()>3||r.speed_reference.size()!=r.steps+1||r.speed_derivative.size()!=r.steps+1||first>r.steps|| (operation=="prefix"&&r.waypoints.empty()))throw std::invalid_argument("invalid native recipe");
         }
         if((operation=="terminal"||operation=="headroom")&&(!r.steps||r.speed<=0))throw std::invalid_argument("invalid proposal fixture");
         Path result;State out{};Control command{};bool ok=true;double scalar=0.;
+        ProtectionResult protected_result{};LocalControlResult local_result{};std::vector<State> sampled;
         std::exception_ptr error;
         Py_BEGIN_ALLOW_THREADS
         try {
@@ -121,10 +146,22 @@ PyObject* evaluate(PyObject*,PyObject* args) {
             else if(operation=="terminal")ok=terminal_distance(r.speed,r.cruise,p,r,scalar);
             else if(operation=="headroom")ok=headroom(r.speed,p,r,scalar);
             else if(operation=="guidance")command=guidance(s,ref,yaw,speed_ff,p);
+            else if(operation=="held_control")ok=held_control_ok(s,u,p,hold_dt);
+            else if(operation=="protect")protected_result=protect_control(s,u,p,hold_dt);
+            else if(operation=="execution_control")local_result=local_control_update(s,ref,u,have_previous?&previous:nullptr,estimate,p,measurement_dt,hold_dt);
+            else if(operation=="propagate_samples")sampled=propagate_samples(s,u,durations,p,static_cast<unsigned>(subdivisions),wind);
         } catch(...) {error=std::current_exception();}
         Py_END_ALLOW_THREADS
         if(error)std::rethrow_exception(error);
-        if(operation=="envelope")return PyBool_FromLong(ok);
+        if(operation=="envelope"||operation=="held_control")return PyBool_FromLong(ok);
+        if(operation=="protect")return Py_BuildValue("(Nii)",
+            PyBytes_FromStringAndSize(reinterpret_cast<const char*>(protected_result.control.data()),sizeof(Control)),
+            static_cast<int>(protected_result.intervened),static_cast<int>(protected_result.feasible));
+        if(operation=="execution_control")return Py_BuildValue("(NNii)",
+            PyBytes_FromStringAndSize(reinterpret_cast<const char*>(local_result.control.data()),sizeof(Control)),
+            PyBytes_FromStringAndSize(reinterpret_cast<const char*>(local_result.estimated_wind.data()),3*sizeof(double)),
+            static_cast<int>(local_result.intervened),static_cast<int>(local_result.feasible));
+        if(operation=="propagate_samples")return PyBytes_FromStringAndSize(reinterpret_cast<const char*>(sampled.data()),sampled.size()*sizeof(State));
         if((operation=="checked"||operation=="terminal"||operation=="headroom")&&!ok)Py_RETURN_NONE;
         if(operation=="terminal"||operation=="headroom")return PyFloat_FromDouble(scalar);
         if(operation=="rhs"||operation=="propagate"||operation=="checked")return PyBytes_FromStringAndSize(reinterpret_cast<const char*>(out.data()),sizeof(out));
@@ -140,7 +177,7 @@ PyObject* evaluate(PyObject*,PyObject* args) {
 #else
 #define SWARM_COMPILER __VERSION__
 #endif
-PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:s,s:s,s:s}","abi",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
+PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:i,s:s,s:s,s:s}","abi",1,"execution_api",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
 PyMethodDef methods[]={{"evaluate",evaluate,METH_VARARGS,"Checked native numerical dispatch; float64 contiguous buffers."},{"build_info",info,METH_NOARGS,"Native build identity."},{nullptr,nullptr,0,nullptr}};
 PyModuleDef module={PyModuleDef_HEAD_INIT,"_trajectory_native","Optional coordinated point-mass numerical core.",-1,methods};
 }
