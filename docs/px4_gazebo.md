@@ -18,6 +18,9 @@ tracking/separation claims to this backend.
 
 ## Prerequisites and launch
 
+For first-time host setup, Docker installation and troubleshooting, follow the
+[new-machine installation guide](installation.md).
+
 The tested host is Linux x86-64 with Docker, Python 3.12 and this project's
 existing `.venv`. The container reuses that virtual environment read-only;
 other hosts/interpreters are not validated. Do not mount a real flight controller.

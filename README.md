@@ -107,9 +107,11 @@ independent full-horizon separation and clearance rechecks before execution.
 
 | Topic | Guides |
 |---|---|
+| Installation | [New-machine setup and troubleshooting](docs/installation.md) |
 | Usage and parameters | [3D trajectories](docs/trajectory_3d.md) · [Mission editor](docs/scenario_editor.md) |
 | Coordination and physics | [Architecture](docs/architecture.md) · [Flight model](docs/flight_model_3d.md) |
 | C++ backend | [Defaults and installation](docs/planner_defaults.md) · [Native kernel and benchmarks](docs/native_kernel.md) |
 | Validation and trials | [Scenario campaigns](docs/scaling_campaign.md) · [Flight-envelope validation](docs/flight_envelope_validation.md) |
 | PX4 / Gazebo | [Editor and setup](docs/gazebo_editor.md) · [Four-aircraft experiment](docs/gazebo_fleet.md) |
 | Reference | [All documentation](docs/README.md) · [Scripts, tests and examples](scripts/README.md) |
+| License | [Apache License 2.0](LICENSE) · [Attribution and notices](NOTICE) |

@@ -1,14 +1,21 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "swarm-sim"
+name = "swarmtraj"
 version = "0.1.0"
-description = "A small multi-drone simulation API built on gym-pybullet-drones"
+description = "Coordinated fixed-wing trajectory planning and optional drone simulation backends"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "examples/gazebo/LICENSE.PX4", "examples/gazebo/NOTICE.md"]
 requires-python = ">=3.12"
 dependencies = ["numpy>=1.24"]
+
+[project.urls]
+Homepage = "https://github.com/papantonin/SwarmTraj"
+Repository = "https://github.com/papantonin/SwarmTraj"
+Issues = "https://github.com/papantonin/SwarmTraj/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
