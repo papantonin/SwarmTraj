@@ -838,6 +838,8 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
     from .catalog import Catalog, extend_catalog
     from .parallel import generate_catalogs
     from .search import JointSearch
+    if config.numerical_backend == 'cpp':
+        from .native_planning import NativeJointSearch as JointSearch
 
     assignments = approach_angles(snapshots, config)
     catalogs = [Catalog() for _ in snapshots]
@@ -959,6 +961,16 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
                       counts=counts, search_nodes=search.nodes, diagnostics=diagnostic, timings=timings)
     # Re-evaluate the chosen pairs, independently of the cached search decisions.
     start = perf_counter()
+    if config.numerical_backend == 'cpp':
+        verified = search.verify_joint(plans)
+        if 'reservations' in verified:
+            diagnostic['reservations'] = verified['reservations']
+        diagnostic['obstacle_checks'] = verified['obstacle_checks']
+        timings['joint_verification_wall_s'] = perf_counter() - start
+        return Result('validated',
+            'Numerically validated coupled point-mass flight on [0, horizon]; separation bound is conditional on integration accuracy and tracking tubes.',
+            plans, verified['minimum_distance_lower_bound'], verified['required_distance'],
+            counts, search.nodes, diagnostic, timings)
     checks = [(continuous_distance_lower_bound(a, b), required_distance(a, b, config))
               for a, b in combinations(plans, 2)]
     if any(lower < required for lower, required in checks):

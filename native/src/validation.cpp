@@ -93,7 +93,9 @@ double solid_distance(const Solid& o,const State& s) {
 }
 double clearance(const Candidate& path,const std::vector<Solid>& obstacles) {
     double result=std::numeric_limits<double>::infinity();
-    for(const auto& o:obstacles)for(const auto& s:path.states)result=std::min(result,solid_distance(o,s));
+    for(const auto& o:obstacles)for(const auto& p:path.projected) {
+        const State position{p[0],p[1],p[4],0,0,0,0};result=std::min(result,solid_distance(o,position));
+    }
     return result;
 }
 

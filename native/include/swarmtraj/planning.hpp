@@ -2,6 +2,7 @@
 #include "swarmtraj/random.hpp"
 #include "swarmtraj/validation.hpp"
 #include <map>
+#include <deque>
 #include <memory>
 #include <type_traits>
 #include <variant>
@@ -60,7 +61,7 @@ struct DepartureWindows {
     bool exhausted=false;
 };
 struct Catalog {
-    std::vector<Candidate> plans;
+    std::deque<Candidate> plans; // Appending never invalidates selected plan references.
     std::size_t attempted=0,profile_stage=0,profile_cursor=0,profile_failures=0;
     std::optional<RandomState> rng;
     std::map<std::string,std::size_t> rejections,details;

@@ -147,3 +147,100 @@ def extend_catalog(task):
         setattr(catalog,name,result[key])
     catalog.rng_state=rng_from_record(result['rng'])
     return catalog
+
+
+class NativeJointSearch:
+    """Python object ownership around native search; all decisions run in C++."""
+    def __init__(self,config):
+        self.config=config
+        self._module=native.require_native()
+        if self._module.build_info().get('search_api') != 1:
+            raise RuntimeError('native search kernel unavailable; rebuild with ./scripts/build_native.sh')
+        base=config.for_drone(config.aircraft_profiles[0][0]) if config.aircraft_profiles else config
+        own=[(int(identifier),options(config.for_drone(identifier)),native.parameters(config.for_drone(identifier)))
+             for identifier,_ in config.aircraft_profiles]
+        self._handle=self._module.search_new(options(base),native.parameters(base),own)
+        self._cache={}
+        self._metrics=dict(nodes=0,exhausted=False,optimization_nodes=0,optimization_budget_exhausted=False)
+
+    def _plans(self,plans):
+        records=[]
+        for plan in plans:
+            self._cache[(plan.drone_id,plan.candidate_id)]=plan
+            records.append(candidate_record(plan))
+        return records
+
+    def _catalogs(self,catalogs):
+        return [dict(attempted=c.attempted,plans=self._plans(c.plans)) for c in catalogs]
+
+    def _call(self,operation,**data):
+        from .reservations import ReservationBudgetError
+        try:
+            result=self._module.search_call(self._handle,operation,data)
+        except self._module.ReservationBudgetError as error:
+            raise ReservationBudgetError(str(error)) from error
+        self._metrics=result['metrics']
+        return result['value']
+
+    def _selection(self,keys):
+        return None if keys is None else tuple(self._cache[tuple(key)] for key in keys)
+
+    @property
+    def nodes(self):return self._metrics['nodes']
+
+    @property
+    def exhausted(self):return self._metrics['exhausted']
+
+    @exhausted.setter
+    def exhausted(self,value):self._call('mark_exhausted',value=value)
+
+    @property
+    def optimization_nodes(self):return self._metrics['optimization_nodes']
+
+    @property
+    def optimization_budget_exhausted(self):return self._metrics['optimization_budget_exhausted']
+
+    def compatible(self,first,second):return self._call('compatible',plans=self._plans((first,second)))
+    def margin(self,first,second):return self._call('margin',plans=self._plans((first,second)))
+    def score(self,plans):return tuple(self._call('score',plans=self._plans(plans)))
+    def pair_scores(self,plans):return self._call('pair_scores',plans=self._plans(plans))
+    def optimization_available(self):return self._call('optimization_available')
+    def diagnostics(self):return self._call('diagnostics')
+    def verify_joint(self,plans):return self._call('verify_joint',plans=self._plans(plans))
+
+    def solve(self,catalogs):
+        return self._selection(self._call('solve',domains=[self._plans(d) for d in catalogs]))
+
+    def refine(self,catalogs,incumbent):
+        result=self._call('refine',domains=[self._plans(d) for d in catalogs],incumbent=self._plans(incumbent))
+        return self._selection(result['plans']),result['quality']
+
+    def expansion_indices(self,catalogs,snapshots):
+        return self._call('expansion_indices',catalogs=self._catalogs(catalogs),snapshot_ids=[int(s.drone_id) for s in snapshots])
+
+    def margin_expansion_indices(self,catalogs,snapshots,plans):
+        return self._call('margin_expansion_indices',catalogs=self._catalogs(catalogs),
+            snapshot_ids=[int(s.drone_id) for s in snapshots],plans=self._plans(plans))
+
+    def repair_hints(self,drone_ids,plans=None):
+        from .conflict_guidance import ConflictWitness,RepairHint
+        records=self._call('repair_hints',drone_ids=[int(i) for i in drone_ids],
+            incumbent=None if plans is None else self._plans(plans))
+        result={}
+        for key,record in records.items():
+            w=record['conflict']
+            witness=ConflictWitness(tuple(w['drone_ids']),tuple(w['candidate_ids']),w['sample_time_s'],
+                tuple(tuple(p) for p in w['positions']),w['lower_bound_m'],w['required_m'])
+            result[int(key)]=RepairHint(witness,record['drone_id'])
+        return result
+
+    def interval_hints(self,catalogs,indices,incumbent=None):
+        from .interval_guidance import DepartureWindows
+        records=self._call('interval_hints',catalogs=self._catalogs(catalogs),indices=list(indices),
+            incumbent=None if incumbent is None else self._plans(incumbent))
+        return {int(key):DepartureWindows(r['parent_candidate_id'],tuple(r['reference_drone_ids']),
+            tuple(tuple(i) for i in r['intervals_s']),r['constraints'],r['budget_exhausted']) for key,r in records.items()}
+
+    def passage_hints(self,catalogs,indices,incumbent=None):
+        # Physical generation rejects geometric passage fitting at configuration.
+        return {}

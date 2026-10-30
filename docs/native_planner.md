@@ -66,10 +66,34 @@ own-rejection feedback. Selected native catalog plans are revalidated by Python.
 
 ## Remaining ordered work
 
-1. Native bounded joint search, margin refinement, reservation checks and an
-   independent final full-horizon recheck.
-2. A complete native mission entry point with Python input/output adapters,
-   followed by paired campaign, distribution and full-suite qualification.
+The remaining integration is a complete native mission entry point with Python
+input/output adapters, followed by paired campaign, distribution and full-suite
+qualification.
+
+## 4. Bounded joint search and independent final verification
+
+`search.cpp` preserves catalog order, ID/MRV tie ordering, cumulative node
+budgets and stable leximin branch-and-bound margin refinement. Pair compatibility
+keeps the original `required + 1e-7` threshold. Witness and expansion priorities
+retain their deterministic ordering and remain proposal guidance only.
+
+`reservations.cpp` preserves full-horizon inflated cell/time occupancy, closed
+interval intersections, construction budgets, guarded departure windows and
+nextafter-excluded safe-interval endpoints. Explicit budget errors propagate
+without turning a finite construction limit into physical infeasibility.
+
+`joint_validation.cpp` recomputes selected full-horizon pair bounds, obstacle
+clearance and fresh reservations independently of search caches. Python still
+owns spawn-process scheduling when requested; the native search adapter owns
+only immutable candidate copies and never receives aircraft telemetry.
+Changed candidate geometry under a cached identity is explicitly rejected.
+
+Verification: 11 native-search differential/oracle tests pass, including an
+exhaustive finite-catalog margin optimum, both orderings, shared budget limits,
+pair thresholds, grid conflicts, departure windows, immutable cache identity and
+independent final rejection. The combined backend/catalog/search run passes 39
+tests; five standalone C++ tests pass. The final mission integration will receive
+the complete suite and paired campaign before performance claims are updated.
 
 No departure bound, margin, deadline, physical envelope, validation sample or
 search budget may be weakened during migration. Runtime timings remain outside
