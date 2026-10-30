@@ -3,21 +3,37 @@
 Coordinated 3D trajectory planning for fixed-wing UAV swarms.
 
 ![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
 ![3D planning](https://img.shields.io/badge/Planning-3D-0f766e)
 ![PX4 / Gazebo SITL](https://img.shields.io/badge/PX4%20%2F%20Gazebo-SITL-7c3aed)
 
-![Four-aircraft PX4/Gazebo scene with planned spatial references and static obstacles](docs/images/gazebo.png)
+<table>
+  <tr>
+    <th width="50%">Mission planning</th>
+    <th width="50%">PX4 / Gazebo simulation</th>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href="docs/images/planner.png"><img src="docs/images/planner.png" alt="Python mission editor showing four aircraft, a shared target and three static obstacles, with the physical C++ planner selected" width="100%"></a>
+    </td>
+    <td width="50%">
+      <a href="docs/images/gazebo.png"><img src="docs/images/gazebo.png" alt="Gazebo simulation showing the four-aircraft scenario, colored 3D spatial references and three obstacles" width="100%"></a>
+    </td>
+  </tr>
+</table>
 
-*Native PX4/Gazebo SITL overview of a four-aircraft scenario. Colored lines
-show planned spatial references; grey solids are simulated obstacles.*
+Prepare the fleet mission in the editor, then inspect it in native PX4/Gazebo
+SITL. Colored lines in Gazebo show planned spatial references. Click either
+screenshot to view it at full resolution.
 
 ## Overview
 
-SwarmTraj plans coordinated fixed-wing missions from one shared initial snapshot.
-It generates and validates candidate trajectories offline, selects a compatible
-fleet plan, and executes each aircraft's own plan using its own state and clock,
-without inter-aircraft telemetry. A Python interface drives the C++20 physical
-planner, with a separate adapter for PX4/Gazebo SITL experiments.
+SwarmTraj plans coordinated 3D missions for fixed-wing UAV fleets from one shared
+initial snapshot. It generates and validates candidate trajectories offline,
+selects a compatible fleet plan, and executes each aircraft's own plan using only
+its own state and clock, without inter-aircraft telemetry. Python handles the
+interface, orchestration and visualization; C++20 provides the default physical
+planner, and a separate adapter connects to PX4/Gazebo SITL experiments.
 
 ## Features
 
@@ -33,11 +49,6 @@ planner, with a separate adapter for PX4/Gazebo SITL experiments.
   reproducible simulation replay.
 - **PX4 / Gazebo SITL** — isolated single-aircraft and four-aircraft experiments
   with native autopilots and aerodynamic simulation.
-
-![Gazebo mission preparation showing four aircraft, a shared target and three obstacles](docs/images/planner.png)
-
-*Prepare the four-aircraft example in the Python editor. Mission view shows
-essential inputs; Advanced groups detailed settings while preserving constraints.*
 
 ## Quick start
 
@@ -64,6 +75,9 @@ The editor opens in **Mission** view. Position the aircraft and target, then
 select **Launch mission** to calculate trajectories and open the 3D playback.
 New coupled 3D missions use C++ planning by default; Python remains available as
 an explicit reference backend. This demo does not require PyBullet, PX4 or Gazebo.
+To run the Gazebo workflow pictured above, follow the
+[PX4/Gazebo setup](docs/gazebo_editor.md) and
+[four-aircraft example](docs/gazebo_fleet.md).
 
 ## How it works
 
