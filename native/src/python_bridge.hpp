@@ -77,6 +77,16 @@ inline Candidate candidate(PyObject* d) {
     c.vertical_acceleration=series(get(d,"vertical_acceleration"),false);c.levels=series(get(d,"levels"),false);
     auto* reference=get(d,"speed_reference");c.has_speed_reference=reference!=Py_None;
     if(c.has_speed_reference)c.speed_reference=series(reference,false);
+    if(auto* family=PyDict_GetItemString(d,"family");family&&family!=Py_None)c.family=string(family);
+    if(auto* routing=PyDict_GetItemString(d,"routing_mode"))c.routing_mode=string(routing);
+    if(auto* phases=PyDict_GetItemString(d,"phases")) {
+        if(!PyList_Check(phases)&&!PyTuple_Check(phases))throw std::invalid_argument("invalid phase list");
+        for(Py_ssize_t k=0;k<PySequence_Size(phases);++k) {
+            auto* phase=PySequence_GetItem(phases,k);
+            if(!phase||!PyTuple_Check(phase)||PyTuple_Size(phase)!=3){Py_XDECREF(phase);throw std::invalid_argument("invalid phase");}
+            c.phases.push_back({string(PyTuple_GetItem(phase,0)),size(PyTuple_GetItem(phase,1)),size(PyTuple_GetItem(phase,2))});Py_DECREF(phase);
+        }
+    }
     return c;
 }
 inline ValidationSettings settings(PyObject* d,const Parameters& p) {

@@ -1,0 +1,22 @@
+#include "swarmtraj/planning.hpp"
+#include <cmath>
+#include <iostream>
+#include <stdexcept>
+using namespace swarmtraj;
+void require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
+int main() {
+    Pcg64 rng(std::vector<std::uint32_t>{7,3});require(rng.raw()==0xf99bcc89ba58d5c6ULL,"PCG64 golden raw word changed");
+    PlanningSettings c;
+    c.physics={6,1.15,2.5,.2,45*pi/180,8*pi/180,5,5,.003,20,8,16,50*pi/180,60*pi/180,0,200,3,8,1,.2};
+    c.steps=600;c.latest_arrival=114.85;c.target={500,0};c.target_altitude=30;c.cruise_range=Point{70,100};
+    c.max_delay=0;c.attempts=6;c.candidates=2;
+    Designation s;s.initial={25,0,80,13,pi/2,0,std::atan(13*.52/gravity)};s.yaw_rate=.52;
+    Catalog catalog;extend_catalog(catalog,s,c,1,{});
+    require(catalog.plans.size()==1,"native complete proposal was not accepted");
+    require(validate_candidate(catalog.plans[0],s.initial,s.yaw_rate,{},c).accepted(),"independent catalog replay failed");
+    const auto before=catalog.plans[0].states;
+    extend_catalog(catalog,s,c,2,{});
+    require(catalog.plans.size()==2&&catalog.plans[0].states==before,"catalog resumption changed accepted history");
+    require(catalog.rng.has_value(),"resumable RNG state missing");
+    std::cout<<"native proposals and catalog tests passed\n";
+}

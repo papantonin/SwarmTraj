@@ -45,12 +45,17 @@ class Catalog:
     candidate_proposals: list = field(default_factory=list)
 
 
-def extend_catalog(task):
+def extend_catalog(task, *, backend=None):
     """Continue the exact RNG stream; cumulative budgets are never reset.
 
     This callable is importable by spawn workers. Plans are appended, never
     retimed or modified after validation. Worker exceptions propagate normally.
     """
+    if (task[1].numerical_backend if backend is None else backend) == 'cpp':
+        from .native_planning import extend_catalog as native_extend
+        return native_extend(task)
+    if backend not in (None, 'python'):
+        raise ValueError('catalog backend must be python or cpp')
     from .planning import _candidate, validate_individual
 
     snapshot, config, angle, catalog, goal, *extra = task
