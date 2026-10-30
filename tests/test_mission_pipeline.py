@@ -11,7 +11,7 @@ from swarm_sim.trajectory2d.reservations import occupancy, first_conflict
 
 
 def test_four_aircraft_preparation_reservations_and_contact_events_are_reproducible():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=210,
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=(500, 500), target_altitude=30, horizon=210,
                     activation_time=30, descent_angle_deg=30, max_descent_rate=10,
                     cruise_altitude_range=(30, 120), planning_strategy='adaptive', search_order='mrv',
                     initial_candidates=2, selection_policy='max_margin', conflict_guidance='witness',

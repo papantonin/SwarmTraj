@@ -373,10 +373,8 @@ def main(argv=None):
     parser.add_argument('--scenario', type=Path)
     parser.add_argument('--obstacles', type=Path)
     parser.add_argument('--seed', type=int)
-    parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
-                        help='fresh scene: physical_mission; explicit saved selections and historical v1 geometry are preserved')
-    parser.add_argument('--numerical-backend', choices=['python', 'cpp'],
-                        help='fresh physical scene: cpp; saved selections are preserved; python selects the reference planner; PX4 control is unchanged')
+    parser.add_argument('--generator-mode', choices=['physical_mission'], help=argparse.SUPPRESS)
+    parser.add_argument('--numerical-backend', choices=['cpp'], help=argparse.SUPPRESS)
     parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--timeout', type=float, default=1200)
     parser.add_argument('--output', type=Path)
@@ -401,14 +399,13 @@ def main(argv=None):
         if args.seed is not None:
             scenario = scenario[0], replace(scenario[1], seed=args.seed)
         overrides = {}
-        if args.generator_mode is not None:
-            overrides['generator_mode'] = args.generator_mode
-        if args.numerical_backend is not None:
-            overrides['numerical_backend'] = args.numerical_backend
         if args.workers is not None:
             overrides['planning_workers'] = args.workers
         if overrides:
             scenario = scenario[0], replace(scenario[1], **overrides)
+        if args.generator_mode is not None or args.numerical_backend is not None:
+            from .trajectory2d.production import require_production
+            require_production(scenario[1])
         prepared = []
         def prepare(snapshots, config):
             prepared[:] = [prepare_fleet(snapshots, config, args.end_behavior)]

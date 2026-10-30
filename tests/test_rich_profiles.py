@@ -6,7 +6,6 @@ import pytest
 
 from swarm_sim.trajectory2d import Config, plan_mission, separate_loiter_snapshot
 from swarm_sim.trajectory2d.planning import validate_individual
-from swarm_sim.trajectory2d.rich_profiles import speed_schedule
 
 
 @pytest.mark.parametrize('values', [
@@ -22,27 +21,11 @@ def test_invalid_profile_configuration(values):
         Config(**values)
 
 
-def test_speed_bump_is_smooth_bounded_and_keeps_holding_and_terminal_speed():
-    from types import SimpleNamespace
-    proposal = SimpleNamespace(speed=12, release_time=10, arrival_time=80, drone_id=0, candidate_id=0)
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', speed_profile='smooth', speed_profile_range=(10, 14))
-    fine = np.linspace(0, 100, 10001)
-    speed, derivative = speed_schedule(proposal, config, fine)
-    assert speed.min() >= 10 and speed.max() <= 14
-    assert np.ptp(speed) > .2
-    assert np.max(np.abs(derivative * speed / 12)) <= config.speed_profile_acceleration
-    assert np.all(speed[fine <= 14] == 12) and np.all(speed[fine >= 62] == 12)
-    assert derivative[1400] == derivative[6200] == 0
-    # The speed is C1, not C2 at the two knots: centered differences there
-    # have O(h), not O(h²), truncation error. Check the smooth interior and
-    # separately check the exact zero derivatives at the joins above.
-    interior = (fine > 14.01) & (fine < 61.99)
-    np.testing.assert_allclose(np.gradient(speed, fine)[interior], derivative[interior], atol=2e-5)
 
 
 @pytest.fixture(scope='module')
 def scene():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=210,
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=(500, 500), target_altitude=30, horizon=210,
                     activation_time=30, descent_angle_deg=30, max_descent_rate=10,
                     cruise_altitude_range=(30, 120), cruise_levels=2,
                     speed_profile='smooth', speed_profile_range=(10, 14),
@@ -84,7 +67,7 @@ def test_independent_validation_rejects_false_profile_metadata(scene, tamper):
 def test_rich_interval_guided_four_drone_planning_is_spawn_reproducible_and_executes():
     from swarm_sim.trajectory2d.obstacles import load_obstacles
     from swarm_sim.trajectory2d.execution import simulate
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=240,
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=(500, 500), target_altitude=30, horizon=240,
                     activation_time=30, descent_angle_deg=30, max_descent_rate=10,
                     cruise_altitude_range=(30, 120), cruise_levels=2,
                     speed_profile='smooth', speed_profile_range=(10, 14),
@@ -106,16 +89,3 @@ def test_rich_interval_guided_four_drone_planning_is_spawn_reproducible_and_exec
     assert serial.diagnostics['reservations']['full_horizon_verified']
     execution = simulate(serial.plans, config)
     assert execution.report['execution_validated'], execution.report['execution_failures']
-
-
-def test_three_level_geometric_profiles_keep_exact_grid_kinematics():
-    from swarm_sim.trajectory2d.vertical import build_profile
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', horizon=180, cruise_altitude_range=(40, 120), cruise_levels=3,
-                    target_altitude=30, max_descent_rate=10)
-    snapshot = replace(separate_loiter_snapshot()[0], altitude=80, cruise_altitude=80)
-    info = {}
-    result = build_profile(snapshot, config, 3, 130, np.random.default_rng(7), profile_info=info)
-    assert result is not None and len(info['levels']) == 3
-    states, commands = result
-    np.testing.assert_allclose(states[1:, 0], states[:-1, 0] + states[:-1, 1]*config.dt + .5*commands*config.dt**2)
-    np.testing.assert_allclose(states[1:, 1], states[:-1, 1] + commands*config.dt, atol=1e-12)

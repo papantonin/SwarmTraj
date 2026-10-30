@@ -24,13 +24,13 @@ def bench():
 
 @pytest.fixture
 def config():
-    return Config(dimensions=3, generator_mode='geometric', numerical_backend='python', max_descent_rate=10)
+    return Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', max_descent_rate=10)
 
 
 @pytest.mark.parametrize('name', ('fixed_wing_reference', 'fixed_wing_training', 'rascal110_empty_approx', 'rascal110_fuelled_approx'))
 def test_parameter_relative_boundaries_cover_every_loaded_airframe(bench, name):
     profile = load_aircraft_profile(Path(__file__).resolve().parents[1] / 'examples/aircraft' / f'{name}.json')
-    config = profile.apply(Config(dimensions=3, generator_mode='geometric', numerical_backend='python'))
+    config = profile.apply(Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp'))
     rows = bench.check_boundaries(config, parameter_relative=True)
     assert {r['target_constraint'] for r in rows} == set(bench.UNITS)
     assert all(r['contract_consistent'] and r['target_classification_correct'] for r in rows)
@@ -162,7 +162,7 @@ def test_no_planner_guidance_or_plan_mutation(bench, config, monkeypatch):
         pytest.fail('the expanded bench must not invoke planning/guidance')
     monkeypatch.setattr(public, 'plan_mission', forbidden)
     monkeypatch.setattr(planning, 'plan_mission', forbidden)
-    monkeypatch.setattr(physics, 'guidance', forbidden)
+    monkeypatch.setattr(physics, 'guidance', forbidden, raising=False)
     first = bench.check_dynamic(12, 'climb_recovery', .2, config)
     assert first == bench.check_dynamic(12, 'climb_recovery', .2, config)
 

@@ -1,8 +1,13 @@
 # Contact events, moving preparation and cell/time reservations
 
+Production uses only the physical C++ planner and C++ local execution.
+Planar/legacy/geometric modes are archive-only; see
+[production policy and explicit migration](planner_defaults.md).
+
 These three additions keep full-horizon physical, obstacle and pair-separation
 checks. They introduce no inter-aircraft or ground telemetry during autonomous
-execution. Existing planar/legacy modes remain available.
+execution. Historical planar/legacy data remains inspectable, but cannot be
+launched by the current production engine.
 
 ## 1. Consistent first-contact events
 

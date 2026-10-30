@@ -8,6 +8,7 @@ from swarm_sim.trajectory2d.catalog import Catalog
 from swarm_sim.trajectory2d.native_planning import NativeJointSearch
 from swarm_sim.trajectory2d.search import JointSearch
 from test_execution_boundaries import straight_flight
+from search_oracle import feasible, margins
 
 pytestmark=pytest.mark.skipif(importlib.util.find_spec('swarm_sim._trajectory_native') is None,
                             reason='optional C++ extension not built')
@@ -24,7 +25,7 @@ def ids(plans):return None if plans is None else [(p.drone_id,p.candidate_id) fo
 
 @pytest.mark.parametrize('order',['id','mrv'])
 @pytest.mark.parametrize('budget',[1,2,100])
-def test_first_feasible_and_margin_refinement_match_exact_search_trace(order,budget):
+def test_public_alias_preserves_native_search_trace(order,budget):
     c,p=straight_flight();c=replace(c,generator_mode='physical_mission',numerical_backend='cpp',
         search_order=order,max_search_nodes=budget,margin_search_nodes=4)
     domains=[[shifted(p,0,0,0.),shifted(p,0,1,30.)],
@@ -37,9 +38,7 @@ def test_first_feasible_and_margin_refinement_match_exact_search_trace(order,bud
         sa,qa=a.refine(domains,pa);sb,qb=b.refine(domains,pb)
         assert ids(sa)==ids(sb) and qa==qb and a.nodes==b.nodes
         assert a.diagnostics()==b.diagnostics()
-        feasible=[plans for plans in itertools.product(*domains) if all(
-            JointSearch(c).compatible(x,y) for x,y in itertools.combinations(plans,2))]
-        assert feasible
+        assert feasible(domains, c)
         assert all(b.compatible(x,y) for x,y in itertools.combinations(sb,2))
 
 
@@ -98,7 +97,6 @@ def test_complete_margin_search_matches_exhaustive_catalog_oracle():
         max_search_nodes=1000,margin_search_nodes=1000)
     domains=[[shifted(p,i,j,y) for j,y in enumerate(ys)] for i,ys in enumerate(((0.,30.),(5.,60.),(10.,90.)))]
     search=NativeJointSearch(c);incumbent=search.solve(domains);best,quality=search.refine(domains,incumbent)
-    oracle=JointSearch(c)
-    feasible=[plans for plans in itertools.product(*domains) if all(oracle.compatible(a,b) for a,b in itertools.combinations(plans,2))]
+    admissible=feasible(domains,c)
     assert quality['catalog_optimal']
-    assert search.score(best)==max(oracle.score(plans) for plans in feasible)
+    np.testing.assert_allclose(search.score(best),max(margins(plans,c) for plans in admissible),atol=1e-12,rtol=0)

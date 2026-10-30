@@ -2,6 +2,18 @@
 #include "swarmtraj/flight.hpp"
 
 namespace swarmtraj {
+struct OwnReference {
+    std::vector<State> states;
+    std::vector<Control> controls;
+    Parameters physics;
+};
+struct ReferenceWindow {
+    State state;
+    Control feedforward;
+};
+// Immutable own plan only. No fleet, disturbance or observer input is accepted.
+ReferenceWindow sample_reference(const OwnReference&, double local_time, double local_duration);
+
 struct OwnHistory {
     State measured;
     Control applied;

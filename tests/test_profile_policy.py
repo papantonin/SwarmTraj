@@ -13,7 +13,7 @@ from swarm_sim.trajectory2d.profile_policy import families, family_config
 
 
 def mixed_config(**kw):
-    values = dict(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=240,
+    values = dict(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=(500, 500), target_altitude=30, horizon=240,
                   activation_time=30, cruise_altitude_range=(30, 120), cruise_levels=2,
                   speed_profile='smooth', speed_profile_range=(10, 14),
                   planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
@@ -51,81 +51,12 @@ def test_no_family_is_enabled_without_explicit_permission(levels, speed, names):
     assert [f.name for f in families(config)] == names
 
 
-def test_rejections_unlock_families_without_resetting_budget(monkeypatch):
-    import swarm_sim.trajectory2d.planning as planning
-    calls = []
-    def reject(snapshot, config, candidate_id, rng, *a, **kw):
-        calls.append((candidate_id, config.cruise_levels, config.speed_profile))
-        assert config.profile_policy == 'strict'
-        return None
-    monkeypatch.setattr(planning, '_candidate', reject)
-    config = mixed_config(attempts=8)
-    catalog = extend_catalog((separate_loiter_snapshot()[0], config, None, Catalog(), 2))
-    assert catalog.attempted == 8 and len(catalog.profile_proposals) == 8
-    assert [p['family'] for p in catalog.profile_proposals] == [
-        'baseline', 'baseline', 'levels_2', 'baseline', 'speed', 'levels_2',
-        'levels_2_speed', 'speed']
-    assert all(e['reason'] == 'consecutive_rejections' for e in catalog.profile_events)
-    assert sum(catalog.rejections.values()) == 8
-    assert [c[0] for c in calls] == list(range(8))
 
 
-def test_conflict_extension_tries_new_family_first_and_retains_old_plans(monkeypatch):
-    import swarm_sim.trajectory2d.planning as planning
-    from swarm_sim.trajectory2d import Trajectory
-    calls = []
-    def candidate(snapshot, config, candidate_id, rng, *a, **kw):
-        calls.append((config.cruise_levels, config.speed_profile))
-        return Trajectory(snapshot.drone_id, candidate_id, snapshot.speed, config.dt,
-                          np.zeros((2, 4)), np.zeros(1), 1, 0)
-    monkeypatch.setattr(planning, '_candidate', candidate)
-    monkeypatch.setattr(planning, 'validate_individual', lambda *a, **kw: True)
-    config = mixed_config(attempts=5)
-    snapshot = separate_loiter_snapshot()[0]
-    catalog = extend_catalog((snapshot, config, None, Catalog(), 1))
-    old = catalog.plans[0]
-    catalog = extend_catalog((snapshot, config, None, catalog, 3, None, None, 'conflict'))
-    assert catalog.plans[0] is old and old.profile_family == 'baseline'
-    assert calls == [(1, 'constant'), (2, 'constant'), (1, 'constant')]
-    assert catalog.profile_events == [dict(before_candidate_id=1, reason='conflict', unlocked_family='levels_2')]
-    assert catalog.attempted == 3
 
 
-def test_strict_requests_never_fall_back_even_after_rejections(monkeypatch):
-    import swarm_sim.trajectory2d.planning as planning
-    def reject(snapshot, config, *a, **kw):
-        assert config.cruise_levels == 2 and config.speed_profile == 'smooth'
-        return None
-    monkeypatch.setattr(planning, '_candidate', reject)
-    config = replace(mixed_config(attempts=8), profile_policy='strict')
-    catalog = extend_catalog((separate_loiter_snapshot()[0], config, None, Catalog(), 2, None, None, 'conflict'))
-    assert catalog.attempted == 8 and not catalog.plans
-    assert not catalog.profile_events and not catalog.profile_proposals
 
 
-def test_joint_conflict_unlocks_only_the_expanded_catalogs(monkeypatch):
-    """Artificial compatibility graph, separate from physical-flight tests below."""
-    import swarm_sim.trajectory2d.planning as planning
-    from swarm_sim.trajectory2d import Trajectory
-    def candidate(snapshot, config, candidate_id, rng, *a, **kw):
-        return Trajectory(snapshot.drone_id, candidate_id, snapshot.speed, config.dt,
-                          np.zeros((2, 4)), np.zeros(1), 1, 0)
-    def lower(a, b):
-        return -1. if {a.drone_id, b.drone_id} == {0, 1} and a.candidate_id == b.candidate_id == 0 else 100.
-    monkeypatch.setattr(planning, '_candidate', candidate)
-    monkeypatch.setattr(planning, 'validate_individual', lambda *a, **kw: True)
-    monkeypatch.setattr(planning, 'continuous_distance_lower_bound', lower)
-    result = plan_mission(separate_loiter_snapshot(4), mixed_config(initial_candidates=1))
-    assert result.validated
-    assert result.diagnostics['rounds'][1]['expanded_drone_ids'] == [0, 1]
-    assert [c['attempted'] for c in result.diagnostics['catalogs']] == [2, 2, 1, 1]
-    for catalog in result.diagnostics['catalogs']:
-        events = catalog['profile_events']
-        if catalog['drone_id'] in (0, 1):
-            assert len(events) == 1 and events[0]['reason'] == 'conflict'
-            assert events[0]['unlocked_family'] == 'levels_2'
-        else:
-            assert not events
 
 
 @pytest.fixture(scope='module')

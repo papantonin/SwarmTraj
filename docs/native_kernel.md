@@ -1,78 +1,44 @@
-# C++20 numerical kernels
+# C++20 production engine
 
-New coupled 3D missions default to `physical_mission` and the C++ numerical
-backend. Python remains the interface and explicit independent validation
-reference. See [default selection and saved compatibility](planner_defaults.md). The
-standalone library covers seven-state flight dynamics, held-control RK4,
-construction envelope samples, local construction guidance, terminal fixtures,
-pull-out and complete physical candidate construction. It now also covers
-NumPy-compatible seeded proposals, routing, resumable catalogs, independent
-validation, bounded joint selection and final full-horizon rechecks.
-One worker uses a complete native mission call; requested parallel catalogs
-retain Python's deterministic spawn-process orchestration. Visualization,
-CLI/scenario preparation and reports remain Python. A separate opt-in execution
-backend covers constrained own-state control and sampled simulator propagation.
-Global execution observation remains Python. See the
-[full-planner migration and current qualification](native_planner.md).
-
-## Build and run
-
-Use the existing Python 3.12+ environment. A C++20 compiler, CMake 3.20+ and
-Python development headers are required for the local extension build:
+C++ is the only production backend for physical 3D planning and constrained local
+point-mass execution. It covers dynamics, RK4, deterministic proposals, routing,
+resumable catalogs, independent validation, joint selection and final rechecks.
+Python retains the interface, deterministic spawn orchestration, immutable public
+objects, independent audit equations, global observation, plots and reports.
+See [production policy, installation and archive migration](planner_defaults.md).
 
 ```bash
+bash scripts/setup.sh --trajectory
+.venv/bin/python examples/trajectory_3d.py --no-gui
+# Rebuild and run standalone native checks in an existing environment:
 ./scripts/build_native.sh
-.venv/bin/python examples/trajectory_3d.py --no-gui \
-  --generator-mode physical_mission --numerical-backend cpp --workers 1 \
-  --execution-backend cpp \
-  --output results/native-example
+# Every ordinary wheel now includes the required extension:
+.venv/bin/python -m pip wheel . --no-deps --no-build-isolation --wheel-dir results/native-wheels
 ```
 
-The build script compiles in ignored `build/native/`, puts the extension beside
-the Python package and runs the standalone C++ tests. For a distributable wheel:
+The direct CPython buffer binding needs no pybind11 or scikit-build dependency.
+Builds require C++20 and Python development headers; the CMake checker requires
+CMake 3.20+. Linux x86-64 / CPython 3.12 / GCC 13.3 is the qualified environment.
+Missing capabilities fail explicitly; no Python production fallback exists.
+A single native call plans a serial mission. Parallel catalogs use Python spawn
+scheduling around native proposal/catalog/search operations. Native output owners
+keep transferred NumPy arrays immutable. The low-level proposal adapter wraps
+C++ `physical_proposal`, including exact PCG64 state transfer, rather than
+constructing a second Python recipe.
+
+The standalone library remains available independently of Python:
 
 ```bash
-SWARM_BUILD_NATIVE=1 .venv/bin/python -m pip wheel . --no-deps \
-  --no-build-isolation --wheel-dir results/native-wheels
-```
-
-An ordinary installation or wheel build keeps the pure Python package. No new
-Python build dependency is required: the small binding uses CPython's buffer API
-directly. pybind11 and scikit-build-core can be considered if a larger binding
-surface justifies them. Linux x86-64 / CPython 3.12 / GCC 13.3 is the tested
-platform; other compiler/platform branches have not been qualified.
-
-Library callers select `Config(dimensions=3)` for the new physical/C++ defaults,
-or explicitly set `numerical_backend="python"` for reference planning.
-A missing/incompatible extension fails explicitly
-before catalog generation. There is no automatic fallback. The option requires
-coupled 3D physical generation; geometric, planar and legacy modes reject it.
-Shared PX4 editor scenarios now save the backend explicitly in v3 records.
-Historical v1/v2 records select Python; v3 requires both generator and backend.
-The editor's **C++ construction (off: Python)** checkbox is enabled only for
-physical coupled 3D generation. Its existing label selects the numerical backend,
-which now includes the full physical planner. A missing extension or incompatible selection
-is rejected without switching backends silently. Native PX4 controllers and
-Gazebo aerodynamics remain unchanged.
-The subsequent [editor/startup qualification](generator_migration.md#c-editor-and-ordered-startup-qualification-30-october-2026)
-records the 960-test suite, readiness/load checks and one single plus three
-four-aircraft native trials for this integration.
-
-Build the standalone library without Python, or run sanitizer checks, with:
-
-```bash
-cmake -S native -B build/native-check -DSWARM_BUILD_PYTHON=OFF \
-  -DSWARM_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
+cmake -S native -B build/native-check -DSWARM_BUILD_PYTHON=OFF -DSWARM_SANITIZE=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/native-check --parallel 2
 ctest --test-dir build/native-check --output-on-failure
 ```
 
-The standalone mission entry point is `native/include/swarmtraj/mission.hpp`;
-flight, execution, validation and catalog/search interfaces are also installed.
-Their numerical functions expect finite, physically valid inputs and resolved own-aircraft
-parameters. The Python boundary validates buffer sizes, values and configuration;
-it accepts native float64 C-contiguous buffers without implicit casting. The
-Python convenience wrapper performs its conversions explicitly.
+The numerical contracts below remain applicable. Python-versus-C++ timings and
+differential qualification below are historical measurements of the migration;
+the retired Python production implementations remain in Git at `300de37`, not
+in the installed package. Current regressions use stored historical negatives,
+native determinism/transport checks and independent physical audit replay.
 
 ## Numerical and ownership contract
 
@@ -121,25 +87,24 @@ No native thread pool has been added. Existing deterministic spawn-based catalog
 workers remain available. Fast native candidates can make pool startup dominate;
 measure `--workers 1` before requesting more processes.
 
-## Optional local execution kernel
+## Required local execution and own references
 
-`simulate(plans, config, execution_backend="cpp")` and the trajectory CLI's
-`--execution-backend cpp` select the execution kernel independently of
-`Config.numerical_backend`. Local execution defaults to Python; physical 3D
-planning defaults to C++. C++ execution supports
-coupled 3D plans made by either generator, with the `constrained` controller.
-Planar, legacy-flight and `--tracking-controller legacy` combinations reject
-this option explicitly. A missing extension or missing `execution_api=1`
-capability raises an error; rebuild an older extension before using it.
-The editor's numerical-backend checkbox and PX4 scenario schema do not select
-the local execution backend. This option does not port PX4 controllers or Gazebo.
+`simulate(plans, config)` uses C++ control and motion with physical 3D production
+plans. Native `execution_api=1` and `reference_api=1` are required; missing
+capabilities fail with rebuild instructions. Python/legacy execution requests
+are rejected. The editor has no backend checkbox. PX4 controllers and Gazebo
+physics remain separate.
 
-At each actuator update, Python samples the own plan and averages feedforward
-over the own local-clock interval. One native call then updates the own-motion
-wind estimate, computes nominal and measured-state guidance, combines the
-command and applies held-control protection. The estimate uses only the previous
-own measurement and applied command. The controller API has no true simulator
-wind or fleet-state input, and rejects a supplied true-wind option.
+An executor copies only its own immutable seven-state history and four-command
+history into compact native storage once. At each actuator update C++ samples
+the reference using the original two-substep RK4 and averages held feedforward
+commands across the same local-clock interval, including trims before/after the
+reference horizon. Python retains own-clock event scheduling and sensor draws;
+it no longer integrates reference dynamics in the control path. The native
+controller then updates the own-motion estimate, computes nominal/measured-state
+guidance and applies protection. No peer state or true simulator wind enters it.
+The independently implemented Python sampler remains available to audit these
+native windows and evaluate global execution.
 
 Protection retains the same actuator/bank clipping, **21 inclusive samples**,
 **four RK4 subdivisions**, envelope tolerance **1e-8**, verified trim fallback
@@ -217,11 +182,12 @@ and reporter guards reject changed sources or a different native binary. Reports
 keep exact recovery comparisons separate from C++/Python comparisons within the
 declared absolute tolerances. The reporter explicitly uses the independent
 Python physical validator, including corrupted-command and late-obstacle
-negative checks. Execution expectations use the requested runtime backend;
-omitting `--execution-backend` keeps Python execution.
+negative checks. Historical execution expectations used the recorded runtime backend. Current
+production always uses C++; omitting a compatibility flag also uses C++.
 
-Native-specific numerical tests skip when the extension is absent. Build it
-before using the full suite as native validation. The standalone C++ tests also
+The production capability tests require the native extension and fail if it is
+absent. Historical optional-kernel test snapshots could skip native tests; those
+skips are not evidence for the current required engine. The standalone C++ tests also
 cover a manufactured trim, heading wrap, envelope rejection and pull-out.
 
 The initial construction-port snapshot passed **925 pytest tests** (660.26 s, four

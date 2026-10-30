@@ -25,7 +25,7 @@ def historical_derivative(state, control, parameters, wind=(0., 0., 0.)):
 @pytest.mark.parametrize('held_control', [False, True])
 def test_dense_rollouts_and_envelope_classification_are_bit_identical(monkeypatch, shape, held_control):
     rng = np.random.default_rng(731)
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     states = rng.uniform([-200., -200., 20., 8., -3., -.65, -.8],
                          [200., 200., 180., 16., 3., .65, .8], (*shape, 7))
     controls = rng.uniform([0., 0., .2, -.5], [5., 5., 2.5, .5], (4,) if held_control else (*shape, 4))
@@ -43,9 +43,9 @@ def test_dense_rollouts_and_envelope_classification_are_bit_identical(monkeypatc
 
 
 def test_batched_physical_step_retains_nominal_and_refined_switch_checks():
-    from swarm_sim.trajectory2d.physical_generation import _step
+    from checked_step_reference import checked_step as _step
     rng = np.random.default_rng(802)
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     for _ in range(100):
         state = rng.uniform([-10., -10., .01, 7.9, -3., -.7, -.9],
                             [10., 10., 180., 16.1, 3., .7, .9])

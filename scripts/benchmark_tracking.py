@@ -55,7 +55,7 @@ def main():
     if args.baseline:
         previous = json.loads(args.baseline.read_text())
         baseline = {(r['scenario'], r['seed']): r for r in previous['runs'] if r['mode'] == 'adaptive_mrv'}
-    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
+    base = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
                   cruise_altitude_range=(30, 120), planning_workers=args.workers,
                   planning_strategy='adaptive', search_order='mrv')
     scenarios = {'default_90s': base,

@@ -7,7 +7,18 @@ import sys
 import numpy as np
 import pytest
 
-from swarm_sim.trajectory2d import Config, plan_mission, separate_loiter_snapshot
+from swarm_sim.trajectory2d import Config, plan_mission
+from swarm_sim.trajectory2d import separate_loiter_snapshot as _snapshots
+
+
+def separate_loiter_snapshot(*args, **kwargs):
+    return tuple(replace(s, altitude=80.) for s in _snapshots(*args, **kwargs))
+
+
+def coupled_config():
+    return Config(dimensions=3, target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
+                  cruise_altitude_range=(30,120), horizon=120, candidates=3, attempts=12)
+
 from swarm_sim.trajectory2d.parallel import generate_catalogs, worker_count
 from swarm_sim.trajectory2d.planning import _candidate, _generate_catalog
 
@@ -30,7 +41,7 @@ def assert_same_catalog(first, second):
 ])
 def test_invalid_performance_configuration_is_rejected(parameters):
     with pytest.raises(ValueError):
-        Config(**parameters)
+        Config(dimensions=3, **parameters)
 
 
 @pytest.mark.parametrize("requested,count,expected", [(0, 4, 4), (1, 4, 1), (2, 4, 2), (12, 4, 4), (4, 2, 2), (0, 1, 1)])
@@ -48,7 +59,7 @@ def test_interactive_call_warns_and_falls_back_to_serial(monkeypatch):
 
 def test_spawn_catalogs_and_joint_search_are_exactly_reproducible():
     snapshots = separate_loiter_snapshot()[:2]
-    config = Config(candidates=3, attempts=8)
+    config = Config(dimensions=3, candidates=3, attempts=8)
     tasks = [(s, config, None) for s in snapshots]
     serial = generate_catalogs(_generate_catalog, tasks, 1)
     parallel = generate_catalogs(_generate_catalog, tasks, 2)
@@ -64,19 +75,8 @@ def test_spawn_catalogs_and_joint_search_are_exactly_reproducible():
     assert_same_catalog(one.plans, many.plans)
 
 
-def coupled_config():
-    return Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
-                  cruise_altitude_range=(30, 120), horizon=120, candidates=3, attempts=12)
 
 
-def test_batched_checks_preserve_entire_coupled_catalog_and_pickle_immutability():
-    snapshot = replace(separate_loiter_snapshot()[0], altitude=30)
-    config = coupled_config()
-    original = _generate_catalog((snapshot, replace(config, rollout_check_interval=1), None))
-    batched = _generate_catalog((snapshot, config, None))
-    assert original
-    assert_same_catalog(original, batched)
-    assert_same_catalog(original, pickle.loads(pickle.dumps(original)))
 
 
 def test_spawn_preserves_complete_coupled_catalogs_not_just_selected_plans():
@@ -90,32 +90,6 @@ def test_spawn_preserves_complete_coupled_catalogs_not_just_selected_plans():
         assert_same_catalog(first, second)
 
 
-def test_batch_covers_both_endpoints_of_every_primitive_including_last_partial_block(monkeypatch):
-    import swarm_sim.trajectory2d.coupled_planning as coupled
-    original_check = coupled.envelope_ok
-    calls = []
-
-    def record(states, controls, config):
-        calls.append((states.copy(), controls.copy()))
-        return original_check(states, controls, config)
-
-    monkeypatch.setattr(coupled, "envelope_ok", record)
-    config = coupled_config()
-    snapshot = replace(separate_loiter_snapshot()[0], altitude=30)
-    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence([config.seed, snapshot.drone_id])))
-    plan = None
-    for candidate_id in range(config.attempts):
-        calls.clear()
-        plan = _candidate(snapshot, config, candidate_id, rng)
-        if plan is not None:
-            break
-    assert plan is not None
-    points = np.concatenate([s for s, _ in calls])
-    controls = np.concatenate([u for _, u in calls])
-    np.testing.assert_array_equal(points[:, 0], plan.flight_states[:-1])
-    np.testing.assert_array_equal(points[:, 1], plan.flight_states[1:])
-    np.testing.assert_array_equal(controls[:, 0], plan.flight_controls)
-    assert len(calls[-1][0]) == len(plan.flight_controls) % config.rollout_check_interval
 
 
 def _worker_failure(task):

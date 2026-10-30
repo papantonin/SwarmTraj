@@ -1,4 +1,4 @@
-"""Launch coupled 3D point-mass flight (legacy 2.5D/2D remain available)."""
+"""Launch the native coupled 3D point-mass production planner and simulation."""
 
 from trajectory_2d import main
 

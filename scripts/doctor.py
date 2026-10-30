@@ -62,6 +62,12 @@ def main() -> int:
         "Run with .venv/bin/python scripts/doctor.py"))
     for module in ("numpy", "scipy", "matplotlib", "pytest", "swarm_sim.trajectory2d.planning"):
         check(module, lambda module=module: importlib.import_module(module) and None)
+    def native_backend():
+        from swarm_sim.trajectory2d.native_planning import require_planner
+        from swarm_sim.trajectory2d.native_backend import require_execution_native
+        require_planner()
+        require_execution_native()
+    check('Required C++ planning and execution backend', native_backend)
     def dependencies():
         result = subprocess.run([sys.executable, "-I", "-m", "pip", "check"],
                                 capture_output=True, text=True, timeout=120)

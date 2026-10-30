@@ -36,10 +36,10 @@ PHYSICAL_DEFAULTS = {
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--num-drones", type=int, default=4)
-    parser.add_argument("--dimensions", type=int, choices=(2, 3), default=3,
-                        help="2D legacy mode or coupled 3D point-mass flight (default)")
-    parser.add_argument("--flight-model", choices=("point_mass", "legacy"), default="point_mass",
-                        help="Coupled physical 3D model (default), or legacy independent XY/Z")
+    parser.add_argument("--dimensions", type=int, choices=(3,), default=3,
+                        help="Coupled 3D point-mass flight; planar execution is retired")
+    parser.add_argument("--flight-model", choices=("point_mass",), default="point_mass",
+                        help="Coupled physical 3D model; independent legacy XY/Z execution is retired")
     parser.add_argument("--aircraft-profile", type=Path, action='append',
                         help="Versioned fixed-wing JSON profile, common to all drones; coupled 3D only, no physical-flag overrides")
     parser.add_argument('--drone-profile', nargs=2, action='append', metavar=('ID', 'JSON'),
@@ -99,11 +99,10 @@ def main():
                         help="Bias new proposals using sampled pair conflicts (default); none keeps unguided expansion")
     parser.add_argument("--candidate-guidance", choices=("none", "rejections"), default="none",
                         help="Use own rejection history to propose longer level settling or wider obstacle routes; validation unchanged")
-    parser.add_argument("--generator-mode", choices=("geometric", "physical_mission", "physical_recovery_seed"),
-                        help="Default: physical_mission in coupled 3D, geometric in planar/legacy modes; "
-                        "physical_recovery_seed is a compatibility alias for physical_mission")
-    parser.add_argument('--numerical-backend', choices=('python', 'cpp'),
-                        help='Default: cpp for physical coupled 3D, python otherwise; explicit python selects the reference planner; missing C++ fails with build instructions')
+    # Fixed-value aliases preserve existing explicit C++ launch commands.
+    parser.add_argument('--generator-mode', choices=('physical_mission',), default='physical_mission',
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--numerical-backend', choices=('cpp',), default='cpp', help=argparse.SUPPRESS)
     parser.add_argument("--initial-candidates", type=int, default=4,
                         help="Initial catalog size and expansion batch in adaptive mode")
     parser.add_argument("--search-order", choices=("mrv", "id"), default="mrv",
@@ -115,9 +114,9 @@ def main():
     parser.add_argument("--margin-expansion-rounds", type=int, default=1,
                         help="Maximum targeted catalog extensions after first success; 0 optimizes existing catalogs only")
     parser.add_argument("--workers", type=int,
-                        help="Catalog processes: default 1 for C++, auto for Python; explicit 0 = auto, 1 = serial")
+                        help="Native catalog processes: default 1; explicit 0 = automatic spawn selection")
     parser.add_argument("--rollout-check-interval", type=int, default=16,
-                        help="Batch size for identical rollout endpoint checks; 1 restores reference checking")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--max-search-nodes", type=int, default=30000,
                         help="Maximum cumulative search branch expansions across all rounds")
     parser.add_argument("--activation-time", type=float, default=3)
@@ -173,10 +172,9 @@ def main():
     parser.add_argument("--position-bias", type=float, default=0, help="Constant position-measurement bias norm per drone (m)")
     parser.add_argument("--position-noise", type=float, default=0, help="Bounded position-measurement noise radius (m)")
     parser.add_argument("--disturbance-seed", type=int, default=0, help="Reproducible independent per-drone sensor-noise seed")
-    parser.add_argument("--tracking-controller", choices=("constrained", "legacy"), default="constrained",
-                        help="Own-state wind estimation and held-command protection (default), or historical feedback")
-    parser.add_argument('--execution-backend', choices=('python', 'cpp'), default='python',
-                        help='local controller and simulated motion kernel; cpp requires coupled 3D constrained tracking; observer remains Python')
+    parser.add_argument('--tracking-controller', choices=('constrained',), default='constrained',
+                        help='Constrained native own-state tracking; historical control is retired')
+    parser.add_argument('--execution-backend', choices=('cpp',), default='cpp', help=argparse.SUPPRESS)
     parser.add_argument("--playback-speed", type=float, default=4)
     parser.add_argument("--output", type=Path, help="Empty output directory; defaults to a new timestamped run")
     parser.add_argument("--gui", action=argparse.BooleanOptionalAction, default=True)
@@ -307,8 +305,6 @@ def main():
                                            else 0 if args.descent_angle is None else args.descent_angle),
                         cruise_altitude_range=(tuple(args.cruise_range or (30, 120))
                             if args.dimensions == 3 and not args.manual_cruise and args.cruise_altitude is None else None))
-        if args.workers is None and config.numerical_backend == 'python':
-            config = replace(config, planning_workers=0)
     except (ValueError, OSError) as error:
         parser.error(str(error))
     if aircraft_profile is not None:

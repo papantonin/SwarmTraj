@@ -1,9 +1,11 @@
 # 3D point-mass flight model
 
-3D mode defaults to `flight_model="point_mass"`. The engine is implemented in
-`src/swarm_sim/trajectory2d/flight3d.py`, separately from the planner, its
-geometric adaptation (`coupled_planning.py`) and local execution (`execution.py`).
-The historical package name `trajectory2d` is retained for imports.
+Production uses `flight_model="point_mass"` with the C++ equations and RK4 in
+`native/src/flight.cpp`, physical proposals in `native/src/proposals.cpp`, and
+independent native validation. `flight3d.py` retains the separately implemented
+Python equations for audit replay, target events and observation. The historical
+package name `trajectory2d` is retained; its planar/legacy production paths are
+retired. See [backend and archive policy](planner_defaults.md).
 Physical parameter sets can now be loaded through strict, versioned
 [aircraft profiles](aircraft_profiles.md). A run can use one common profile or
 explicit [per-drone airframe assignments](heterogeneous_aircraft.md); this does
@@ -182,7 +184,7 @@ settings without modifying the flight model or relaxing its checks.
 ./scripts/test.sh
 ```
 
-Exact 2.5D regressions remain explicitly tested in legacy mode. Tests for the
-new engine cover equilibria, speed relationships, wind, independent integration,
+Archived 2.5D input semantics remain readable; executable legacy generation is
+retired. Tests for the production engine cover equilibria, speed relationships, wind, independent integration,
 envelope violations, four aircraft with recovery, plan corruption, the absence
 of inter-drone telemetry and numerical convergence.

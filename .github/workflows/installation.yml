@@ -19,7 +19,7 @@ jobs:
       - name: Install from scratch
         run: PYTHON=python3.12 bash scripts/setup.sh --${{ matrix.mode }}
       - name: Core trajectory regression tests
-        run: ./scripts/test.sh tests/test_flight3d.py tests/test_trajectory3d.py
+        run: ./scripts/test.sh tests/test_flight3d.py tests/test_physical_generation.py tests/test_cpp_production.py
       - name: Headless trajectory example
         env:
           MPLBACKEND: Agg

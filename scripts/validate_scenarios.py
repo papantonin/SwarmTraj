@@ -37,15 +37,14 @@ class Scenario:
 
 
 def scenarios(workers=4, obstacles=()):
-    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
+    base = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
                   cruise_altitude_range=(30, 120), planning_workers=workers,
                   planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
                   selection_policy='max_margin', conflict_guidance='witness', obstacle_routing='spatial')
     snapshots = tuple(replace(s, altitude=30+25*k) for k, s in enumerate(separate_loiter_snapshot(4)))
     rich = replace(base, target=(500, 500), horizon=240, activation_time=30, approach_spread_deg=180,
                    obstacles=obstacles, reservation_policy='grid', interval_guidance='safe_windows',
-                   speed_profile='smooth', speed_profile_range=(10, 14), cruise_levels=2,
-                   passage_guidance='safe_windows')
+                   speed_profile='smooth', speed_profile_range=(10, 14), cruise_levels=2)
     shifted = tuple(replace(s, state=(s.state[0]+160, s.state[1]-80, *s.state[2:]), altitude=40+20*k)
                     for k, s in enumerate(separate_loiter_snapshot(4, radius=35, spacing=100)))
     speeds = tuple(s.with_speed(v, base.limits) for s, v in zip(snapshots, (10., 11., 12., 13.)))

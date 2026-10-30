@@ -1,5 +1,11 @@
 # Migrating geometric proposals to direct physical generation
 
+This is a historical study/guide. Its Python, geometric and planar/legacy
+execution instructions require a historical revision (available in Git at
+`300de37`). Current production uses only C++; see
+[production policy and explicit scenario migration](planner_defaults.md).
+Historical results and failed trials below are preserved as recorded.
+
 The physical builder is available throughout the coupled 3D preparation path:
 trajectory CLI, Python editor, versioned shared scenarios, and the one/four
 aircraft PX4/Gazebo adapters. Fresh coupled 3D scenes now default to
@@ -63,12 +69,15 @@ approach sectors are never altered, and independently rejected proposals remain
 rejected. The supplied four-aircraft scene now produces a jointly validated
 reference: 126.32 m full-horizon distance lower bound versus 38.8 m required.
 
-Campaigns can explicitly select process counts and execution families:
+New campaign manifests can explicitly select process counts and execution families.
+Replaying old inputs requires both physical generator and C++ overrides, writes
+a new output, and changes generator semantics; old expectations still remain
+visible and can fail. It transfers no safety validation:
 
 ```bash
 .venv/bin/python scripts/benchmark_scaling_campaign.py \
   --reference results/scaling-campaign-20261028/manifest.json \
-  --suites controls core random replay --generator-mode physical_mission \
+  --suites controls core random replay --generator-mode physical_mission --numerical-backend cpp \
   --planning-workers 2 \
   --execution-families baseline obstacles heterogeneous rich_strict grid \
   --output results/physical-migration-parallel

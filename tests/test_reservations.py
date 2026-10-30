@@ -7,6 +7,46 @@ import pytest
 from swarm_sim.trajectory2d import Config, Trajectory, plan_mission, separate_loiter_snapshot
 from swarm_sim.trajectory2d.reservations import Occupancy, occupancy, first_conflict, safe_intervals, ReservationBudgetError
 from swarm_sim.trajectory2d.search import JointSearch
+from test_execution_boundaries import straight_flight
+from search_oracle import shifted, margins
+
+
+def test_grid_cannot_make_physically_unsafe_native_plans_compatible():
+    config, plan = straight_flight()
+    first, second = shifted(plan, 0, 0, 0.), shifted(plan, 1, 0, 0.)
+    assert margins((first, second), config)[0] < 0
+    for policy in ('none', 'grid'):
+        assert not JointSearch(replace(config, reservation_policy=policy)).compatible(first, second)
+
+
+def test_native_grid_rejects_geometrically_separated_plans_sharing_a_resource():
+    config, plan = straight_flight()
+    config = replace(config, reservation_policy='grid', reservation_cell_size=100.)
+    first, second = shifted(plan, 0, 0, 0.), shifted(plan, 1, 0, 30.)
+    assert margins((first, second), config)[0] > 0
+    assert first_conflict(occupancy(first, config), occupancy(second, config)) is not None
+    assert JointSearch(replace(config, reservation_policy='none')).compatible(first, second)
+    assert not JointSearch(config).compatible(first, second)
+
+
+def test_final_native_reservation_check_ignores_an_incorrect_cached_decision(monkeypatch):
+    config, plan = straight_flight()
+    config = replace(config, reservation_policy='grid', reservation_cell_size=100.)
+    plans = (shifted(plan, 0, 0, 0.), shifted(plan, 1, 0, 30.))
+    search = JointSearch(config)
+    monkeypatch.setattr(search, 'compatible', lambda *a: True)
+    with pytest.raises((RuntimeError, ValueError), match='reservation verification'):
+        search.verify_joint(plans)
+
+
+def test_native_mission_reservation_budget_failure_is_not_infeasibility():
+    from test_native_backend import case
+    _, config = case(reservation_policy='grid', reservation_max_entries=1, candidates=1, horizon=150.)
+    snapshots = tuple(replace(s, altitude=80.).with_speed(13., config.limits)
+                      for s in separate_loiter_snapshot(2))
+    result = plan_mission(snapshots, config)
+    assert result.status == 'reservation_budget_exhausted'
+    assert not result.validated and not result.plans
 
 
 @pytest.mark.parametrize('values', [{'reservation_policy': 'bad'}, {'reservation_cell_size': 0},
@@ -37,42 +77,3 @@ def test_reservations_cover_between_sample_crossings_and_negative_cells():
     assert reserved_a.inflation_m == pytest.approx(4 + 2 + 12 * (.15 + .5))
     with pytest.raises(ReservationBudgetError):
         occupancy(a, replace(config, reservation_max_entries=1))
-
-
-def test_grid_does_not_override_physical_separation_check(monkeypatch):
-    import swarm_sim.trajectory2d.planning as planning
-    a = Trajectory(0, 0, 12, .2, np.zeros((2, 4)), np.zeros(1), 1, 0)
-    monkeypatch.setattr(planning, 'continuous_distance_lower_bound', lambda *args: 0.)
-    search = JointSearch(Config(reservation_policy='grid'))
-    assert not search.compatible(a, replace(a, drone_id=1))
-    assert not search.occupancies  # No grid argument can make unsafe geometry pass.
-
-
-def test_reservation_budget_exhaustion_is_not_an_infeasibility_proof():
-    config = Config(reservation_policy='grid', reservation_max_entries=1, candidates=1)
-    result = plan_mission(separate_loiter_snapshot(), config)
-    assert result.status == 'reservation_budget_exhausted'
-    assert not result.validated and not result.plans
-
-
-def test_cell_time_constraint_can_reject_an_otherwise_separated_pair():
-    a = Trajectory(0, 0, 12, .2, np.tile([1., 1, 0, 0], (2, 1)), np.zeros(1), 1, 0)
-    b = replace(a, drone_id=1, states=np.tile([30., 1, 0, 0], (2, 1)))
-    config = Config(reservation_policy='grid', reservation_cell_size=100)
-    assert JointSearch(replace(config, reservation_policy='none')).compatible(a, b)
-    search = JointSearch(config)
-    assert not search.compatible(a, b)
-    assert search.diagnostics()['reservation_conflicts'] == 1
-
-
-def test_independent_final_reservation_check_rejects_wrong_search(monkeypatch):
-    import swarm_sim.trajectory2d.planning as planning
-    points = [(1, 1), (30, 1), (1, 30), (30, 30)]
-    def candidate(snapshot, config, candidate_id, rng, *args, **kwargs):
-        return Trajectory(snapshot.drone_id, candidate_id, 12, .2,
-                          np.tile([*points[snapshot.drone_id], 0, 0], (2, 1)), np.zeros(1), 1, 0)
-    monkeypatch.setattr(planning, '_candidate', candidate)
-    monkeypatch.setattr(planning, 'validate_individual', lambda *args, **kwargs: True)
-    monkeypatch.setattr(JointSearch, 'compatible', lambda *args: True)
-    with pytest.raises(RuntimeError, match='independent reservation'):
-        plan_mission(separate_loiter_snapshot(), Config(candidates=1, reservation_policy='grid', reservation_cell_size=100))

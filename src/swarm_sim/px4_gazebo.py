@@ -759,10 +759,8 @@ def main(argv=None):
     parser.add_argument('--gpu', action='store_true', help='explicitly expose only /dev/dri/renderD128 for Intel/AMD Mesa rendering; requires --run')
     parser.add_argument('--camera', choices=['free', 'follow'], help='four-aircraft GUI camera: free overview (default) or drone-0 follow')
     parser.add_argument('--seed', type=int, help='PRNG seed; default 7, or the saved scenario seed')
-    parser.add_argument('--generator-mode', choices=['geometric', 'physical_mission'],
-                        help='fresh editor: physical_mission; explicit saved selections and historical v1 geometry are preserved')
-    parser.add_argument('--numerical-backend', choices=['python', 'cpp'],
-                        help='fresh physical editor: cpp; saved selections are preserved; python selects the reference planner; PX4 control is unchanged')
+    parser.add_argument('--generator-mode', choices=['physical_mission'], help=argparse.SUPPRESS)
+    parser.add_argument('--numerical-backend', choices=['cpp'], help=argparse.SUPPRESS)
     parser.add_argument('--workers', type=int, help='catalog processes; 0 selects available CPUs')
     parser.add_argument('--obstacles', type=Path, help='static box/cylinder JSON shared with Matplotlib; included in planning and Gazebo collisions, not certified PX4 avoidance')
     parser.add_argument('--airborne-start', action='store_true', help='experimental warm start: normal ground readiness/arming, one-shot physical initialization at the reference start; no cold in-air boot')
@@ -810,13 +808,12 @@ def main(argv=None):
         if scenario is not None:
             from dataclasses import replace
             overrides = {}
-            if args.generator_mode is not None:
-                overrides['generator_mode'] = args.generator_mode
-            if args.numerical_backend is not None:
-                overrides['numerical_backend'] = args.numerical_backend
             if args.workers is not None:
                 overrides['planning_workers'] = args.workers
             scenario = scenario[0], replace(scenario[1], **overrides)
+        if args.generator_mode is not None or args.numerical_backend is not None:
+            from .trajectory2d.production import require_production
+            require_production(scenario[1])
         prepared = []
         def prepare_edited(snapshots, config):
             validate_scenario(snapshots, config)

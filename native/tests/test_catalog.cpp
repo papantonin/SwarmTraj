@@ -1,6 +1,7 @@
 #include "swarmtraj/planning.hpp"
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 using namespace swarmtraj;
 void require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
@@ -18,5 +19,15 @@ int main() {
     extend_catalog(catalog,s,c,2,{});
     require(catalog.plans.size()==2&&catalog.plans[0].states==before,"catalog resumption changed accepted history");
     require(catalog.rng.has_value(),"resumable RNG state missing");
+    for(const double padding:{-1.,std::numeric_limits<double>::infinity()}) {
+        Pcg64 unchanged(std::vector<std::uint32_t>{7,3});const auto initial=unchanged.state();
+        auto invalid=physical_proposal(s,c,0,unchanged,{},nullptr,"",{},{},padding);
+        require(!invalid.plan&&invalid.rejection=="invalid_proposal_adjustment","invalid padding was accepted");
+        require(unchanged.state().state.high==initial.state.high&&unchanged.state().state.low==initial.state.low,
+                "invalid adjustment consumed RNG state");
+    }
+    Pcg64 unchanged(std::vector<std::uint32_t>{7,3});
+    require(physical_proposal(s,c,0,unchanged,{},nullptr,"",{},c.level_hold-.1).rejection=="invalid_proposal_adjustment",
+            "shorter settling request was accepted");
     std::cout<<"native proposals and catalog tests passed\n";
 }

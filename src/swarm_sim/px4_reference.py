@@ -67,7 +67,7 @@ def generate_reference(seed=7, obstacles=(), scenario=None):
     from .trajectory2d.aircraft_profiles import reference_aircraft_profile
     from .trajectory2d.planning import mission_document
     profile = reference_aircraft_profile()
-    config = profile.apply(Config(dimensions=3, generator_mode='geometric', numerical_backend='python',
+    config = profile.apply(Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp',
         target=(1200., 500.), horizon=100.,
         activation_time=0., min_extra_loiter=0., max_extra_loiter=0., candidates=4,
         attempts=30, detour=60., planning_strategy='adaptive', seed=seed,

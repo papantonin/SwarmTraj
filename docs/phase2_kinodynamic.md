@@ -1,5 +1,11 @@
 # Phase 2 — physical recovery and complete individual mission construction
 
+Production now runs only the C++ implementation of these physical algorithms.
+The Python proposal builder and geometric production path have been removed;
+Python remains the independent audit/observer. Historical comparison tables,
+intermediate rollout decisions and commands below describe the migration study,
+not current backend choices. See [production and archive policy](planner_defaults.md).
+
 New coupled 3D missions default to `generator_mode="physical_mission"` and
 `numerical_backend="cpp"`; [selection and archive rules](planner_defaults.md)
 preserve explicit historical requests. The physical generator constructs a complete individual
@@ -156,18 +162,9 @@ fallback to geometric generation. Source fingerprints distinguish old runs.
   --output results/physical-profiles-campaign
 ```
 
-The CLI exposes the generator option. The scenario editor also provides
-**Physical generator** in coupled 3D; unchecked selects the geometric builder.
-An unsupported physical request leaves the previous configuration in place and
-shows its rejection, without changing the requested mission constraints.
-See the [migration and shared-scenario workflow](generator_migration.md).
-Successful physical plans add optional `generation_phases` to their own exported
-plan: a list of `[name, first_step, last_step]`, indexing the physical controls
-on the plan's `dt` grid. Intervals cover the complete horizon and share state
-boundaries. This metadata describes construction; acceptance is determined by
-the independently reconstructed trajectory, not by trusting phase labels.
-Historical geometric plans omit this key, preserving their result signatures.
-The requested generator mode is included in the mission's hashed `Config`.
+The study originally exposed generator/backend switches. They are removed from
+current preparation: production is fixed to physical C++; archived settings
+remain unchanged with launch disabled. See [production policy](planner_defaults.md).
 
 ## Initial single-level verification
 
@@ -289,7 +286,8 @@ five-aircraft cases at seeds 7 and 19, and grid three-aircraft cases at all
 three seeds. These are externally censored planning outcomes, not continuous
 infeasibility claims. All 259 outcomes are present, but only 254 workers
 finish normally. The report's promotion decision remains **ineligible solely
-because of these five timeouts**; `geometric` stays the default.
+because of these five timeouts**; at that historical stage `geometric` remained
+the default. Current production policy is physical C++ only.
 
 A subsequent [migration check](generator_migration.md#measured-migration-checks-29-october-2026)
 completed those five saved inputs within 49–64 s after rollout allocation and

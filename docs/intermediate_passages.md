@@ -1,5 +1,10 @@
 # Intermediate-cell passage-window guidance
 
+This geometric passage-fitting feature is retired from production. The source
+and experimental results below describe the historical implementation in Git
+at `300de37`. Current physical C++ planning rejects this request explicitly;
+see [production and archive policy](planner_defaults.md).
+
 ## Scope and explicit permissions
 
 Enable `--generator-mode geometric --passage-guidance safe_windows` with grid reservations and smooth speed

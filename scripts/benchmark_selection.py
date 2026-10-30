@@ -26,6 +26,7 @@ def load_scene(path):
     snapshots = tuple(Snapshot(**{**s, "state": tuple(s["state"])}) for s in document["snapshots"])
     if len(snapshots) != 4:
         raise ValueError("This comparison requires exactly four aircraft")
+    values.setdefault('dimensions', 2)
     values.setdefault('generator_mode', 'geometric')
     values.setdefault('numerical_backend', 'python')
     if (values['generator_mode'] not in ('geometric', 'physical_mission', 'physical_recovery_seed')

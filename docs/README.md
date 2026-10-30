@@ -1,15 +1,17 @@
 # SwarmTraj documentation
 
-The coordinated trajectory engine uses custom point-mass dynamics. The
+The coordinated trajectory engine uses native C++ point-mass planning and local
+execution, with Python interfaces and independent audit/observation. The
 optional PX4/Gazebo experiments are separate execution backends; their spatial
 missions do not inherit the planner's timing or separation claims.
 
 ## Start here
 
 - [New-machine installation and troubleshooting](installation.md)
+- [Required C++ production backend and archive migration](planner_defaults.md)
 - [Project overview and examples](../README.md)
 - [Coordinated 3D trajectories and scenario preparation](trajectory_3d.md)
-- [Planar and historical trajectory modes](trajectory_2d.md)
+- [Archived planar and historical trajectory modes](trajectory_2d.md)
 - [Script catalog](../scripts/README.md)
 
 ## Physics, aircraft and tracking

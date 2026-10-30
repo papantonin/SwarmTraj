@@ -11,7 +11,8 @@ from swarm_sim.trajectory2d.execution import simulate
 from swarm_sim.trajectory2d.execution_safety import envelope_margins
 from swarm_sim.trajectory2d.flight3d import envelope_ok, propagate, trim_control
 from swarm_sim.trajectory2d.perturbations import PositionSensor, position_bias_vectors, wind_at
-from swarm_sim.trajectory2d.tracking import WindEstimator, held_control_ok, protect_control
+from swarm_sim.trajectory2d.tracking import held_control_ok
+from swarm_sim.trajectory2d.native_backend import protect_control
 
 
 @pytest.mark.parametrize('model', ['rotating', 'constant', 'gust'])
@@ -35,25 +36,10 @@ def test_position_errors_are_bounded_seeded_and_independent_of_fleet_membership(
     assert np.linalg.norm(samples - biases[3], axis=1).max() <= .1
 
 
-def test_wind_estimator_uses_only_own_model_motion_and_ignores_constant_position_bias():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
-    state = np.array([0., 0., 80., 12., .2, 0., .4])
-    control = trim_control(state, config.flight)
-    estimator = WindEstimator()
-    wind = np.array([.7, -.2, 0.])
-    bias = np.array([.3, -.1, .2])
-    previous = None
-    for _ in range(150):
-        measured = state.copy()
-        measured[:3] += bias
-        estimator.update(measured, .2, config.flight, previous)
-        state = propagate(state, control, .2, config.flight, wind=wind, substeps=4)
-        previous = control
-    np.testing.assert_allclose(estimator.value, wind, atol=1e-7)
 
 
 def test_combined_command_is_protected_across_the_whole_held_interval_without_state_clipping():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     state = np.array([0., 0., 80., 12., .2, 0., .4])
     original = state.copy()
     requested = np.array([1., 0., 2., .5])
@@ -67,18 +53,10 @@ def test_combined_command_is_protected_across_the_whole_held_interval_without_st
     assert config.max_vertical_acceleration == 1 and config.limits.max_bank_deg == 50
 
 
-def test_no_verified_fallback_is_reported_instead_of_repairing_the_physical_state():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
-    state = np.array([0., 0., -1., 12., 0., 0., 0.])
-    command, intervened, feasible = protect_control(state, trim_control(state, config.flight), config, .2)
-    assert intervened and not feasible
-    assert state[2] == -1
-    assert 0 <= command[0] <= config.flight.max_thrust_acceleration
-    assert 0 <= command[1] <= config.flight.max_brake_acceleration
 
 
 def test_diagnostic_margins_match_the_existing_physical_checker():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     states = np.array([[0., 0., 80., 12., .2, 0., .4], [0., 0., 80., 12., .2, 0., .4]])
     controls = np.array([trim_control(states[0], config.flight)] * 2)
     assert envelope_ok(states, controls, config)
@@ -89,17 +67,14 @@ def test_diagnostic_margins_match_the_existing_physical_checker():
 
 
 def straight_scene():
-    config = Config(target=(120, 0), horizon=20, activation_time=0, max_extra_loiter=0)
-    snapshot = Snapshot(0, (0, 0, 0, 0), 12)
-    times = np.arange(101) * .2
-    plan = Trajectory(0, 0, 12, .2, planar(snapshot.state, 12, 0, times), np.zeros(100), 10, 0)
-    return config, plan
+    from test_execution_boundaries import straight_flight
+    return straight_flight()
 
 
 @pytest.mark.parametrize('options', [
     {'wind_model': 'bad'}, {'wind_heading_deg': np.nan}, {'position_noise': -.1},
-    {'position_noise': np.inf}, {'position_biases': [[0, 0, 0]]},
-    {'position_biases': [[0, np.nan]]}, {'disturbance_seed': -1},
+    {'position_noise': np.inf}, {'position_biases': [[0, 0]]},
+    {'position_biases': [[0, np.nan, 0]]}, {'disturbance_seed': -1},
     {'disturbance_seed': True}, {'controller': 'bad'},
 ])
 def test_invalid_disturbance_settings_fail_before_execution(options):
@@ -109,7 +84,8 @@ def test_invalid_disturbance_settings_fail_before_execution(options):
 
 
 def test_clock_and_tracking_assumption_losses_have_explicit_time_and_id():
-    config, plan = straight_scene()
+    from test_execution_boundaries import straight_flight
+    config, plan = straight_flight()
     report = simulate((plan,), config, clock_offsets=[.4]).report
     assert not report['execution_validated']
     event = next(e for e in report['safety_events'] if e['kind'] == 'clock_bound_exceeded')
@@ -119,7 +95,7 @@ def test_clock_and_tracking_assumption_losses_have_explicit_time_and_id():
 
 @pytest.fixture(scope='module', params=[7, 19])
 def regression_scene(request):
-    config = Config(seed=request.param, dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, horizon=150,
+    config = Config(seed=request.param, dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30, horizon=150,
                     max_descent_rate=10, descent_angle_deg=30, cruise_altitude_range=(30, 120),
                     approach_spread_deg=180, planning_strategy='adaptive', search_order='mrv')
     snapshots = tuple(replace(s, altitude=30 + 25*k) for k, s in enumerate(separate_loiter_snapshot(4)))
@@ -135,9 +111,8 @@ def test_previously_failing_four_drone_wind_clock_trials_pass_unchanged_limits(r
     assert not evaluation.report['safety_events']
     assert config.position_error == 2 and config.clock_error == .15
     assert config.max_vertical_acceleration == 1
-    legacy = simulate(result.plans, config, wind=.05, clock_offsets=np.linspace(-.05, .05, 4), controller='legacy')
-    assert not legacy.report['execution_validated']
-    assert legacy.report['safety_events']
+    with pytest.raises(ValueError, match='legacy'):
+        simulate(result.plans, config, wind=.05, clock_offsets=np.linspace(-.05,.05,4), controller='legacy')
 
 
 def test_sensor_noise_is_reproducible_and_no_other_drone_inputs_are_used(regression_scene):

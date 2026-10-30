@@ -1,30 +1,31 @@
 # Planning and execution architecture
 
-The generator choice is now shared by the trajectory editor and the optional
+The physical C++ planner is shared by the trajectory editor and the optional
 PX4/Gazebo preparation path. The point-mass engine and the native aerodynamic
 simulator remain separate models. Physical reference generation does not replace
 Gazebo aerodynamics or transfer a point-mass safety claim to native execution.
 
 ```mermaid
 flowchart TD
-    Editor["Python editor / CLI: aircraft, target, obstacles, timing and generator"]
+    Editor["Python editor / CLI: aircraft, target, obstacles and timing"]
     JSON["Shared single/fleet JSON v3: generator + numerical backend; v1/v2 retain historical meanings"]
     Input["Fixed designation snapshot and own physical profiles; input checks and approach sectors"]
-    Mode{"Generator choice: coupled 3D"}
-    Geom["geometric: routing/vertical proposals, then coupled physical rollout"]
+    Mode{"Supported production input?"}
+    Archive["Inspect archived settings; launch disabled"]
+    Migrate["Explicit migration to a new scenario and provenance file"]
     Physical["physical_mission: integrated loiter, levels, transit, approach, passage, pull-out, recovery"]
-    Backend{"Physical planner: default C++20 numerical pipeline; explicit Python reference"}
-    Individual{"Independent individual validation: forces/envelope, contact, obstacles, full horizon"}
-    Catalog["Deterministic per-aircraft catalogs; serial or spawn processes"]
-    Joint["Bounded joint search; full-horizon distance and optional reservations"]
+    Backend{"Physical planner: required C++20 pipeline"}
+    Individual{"C++ independent individual validation: forces/envelope, contact, obstacles, full horizon"}
+    Catalog["C++ per-aircraft catalogs; serial or Python spawn scheduling"]
+    Joint["C++ bounded joint search; full-horizon distance and optional reservations"]
     Expand{"Compatible selection? Budgets available?"}
     Margin["Prefer larger robust slack if requested; preserve all required safety margins"]
     Mission["Immutable original mission; selected own plan per aircraft"]
     Fail["Explicit rejection / exhausted finite catalog / budget diagnostic"]
-    ExecBackend{"Offline point-mass execution: Python default or explicit C++20"}
+    ExecBackend{"C++20 own reference, control and motion"}
     Own["Own-state, own-clock point-mass tracker; no true wind or peer inputs"]
     Motion["Separate simulator propagation; synthetic disturbance and own sensor sampling"]
-    Eval["Observer-only execution checks: envelope, tracking, separation and obstacles"]
+    Eval["Python observer-only execution checks: envelope, tracking, separation and obstacles"]
     Spatial["Derive own spatial PX4 mission and SDF: timing/separation claims are lost"]
     Native["Isolated pinned runtime: one Gazebo world, one or four independent PX4 instances"]
     Gates["Native feasibility/readiness/arm and bounded warm initialization gates"]
@@ -34,9 +35,9 @@ flowchart TD
     Remove["remove-at-target: own observed contact; own removal acknowledged AND absence verified"]
     Land["land: historical native return, landing and disarm gates"]
     Artifacts["Reports, fingerprints, telemetry and measured limitations"]
-    Editor --> JSON --> Input --> Mode
-    Mode --> Geom --> Individual
-    Mode --> Physical --> Backend --> Individual
+    Editor --> JSON --> Mode
+    Mode -->|retired settings| Archive --> Migrate --> JSON
+    Mode -->|physical C++| Input --> Physical --> Backend --> Individual
     Individual -->|accepted| Catalog --> Joint --> Expand
     Individual -->|rejected; attempts remain| Mode
     Individual -->|exhausted| Fail
@@ -63,22 +64,24 @@ receive their own plan, observed state and clock, without peer telemetry or true
 disturbance state. Observer outputs do not become live avoidance commands.
 Multiple process counts preserve seeded streams, order and acceptance rules.
 
-The optional [C++20 kernel](native_kernel.md) runs complete physical construction
+The required [C++20 engine](native_kernel.md) runs complete physical construction
 loops with resolved own-aircraft parameters and immutable output buffers.
 Proposals, NumPy-compatible RNG, independent validation, catalogs and joint
 search now also have native implementations. One worker uses the complete
 standalone mission API; multiple workers retain Python spawn scheduling.
-The explicit Python validator remains available for qualification. The
-independent `--execution-backend cpp` option compiles constrained local control,
+Independent Python audit validation remains available; it is not a production backend. The
+required C++ execution engine performs constrained local control,
 own-motion wind estimation, held-command protection and simulator propagation.
-Reference/clock scheduling, sensor RNG and independent global execution checks
-remain Python. True simulator wind enters only propagation. Numerical planner
+Own-clock event scheduling, sensor RNG and independent global checks remain
+Python. C++ stores one compact immutable copy of the own plan for reference
+state sampling and held-control feedforward averaging; no peer reference enters
+a controller. True simulator wind enters only propagation. Numerical planner
 identity belongs to the immutable mission; execution identity belongs to the
 runtime report. Shared
 PX4 editor scenarios v3 persist the selected numerical backend; v1/v2 retain
-Python. Native fleet warm initialization is ordered by ID after the existing
+their Python archive metadata and require explicit migration before production use. Native fleet warm initialization is ordered by ID after the existing
 all-aircraft readiness/arming barriers, without claiming timed departure. The existing generated local PDF
-predates this optional numerical branch; regenerate it before using it as an
+predates the mandatory native engine; regenerate it before using it as an
 up-to-date architecture illustration.
 
 See [generator migration](generator_migration.md),

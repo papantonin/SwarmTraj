@@ -45,14 +45,14 @@ that text. Merely hiding an input does not disable its constraint.
 | Flight references | **Automatic cruise**, cruise bounds, **Approach spread (°)** and **Descent (°)** |
 | Selected aircraft | **Cruise (m)**, **Loiter radius (m)** and **Counterclockwise** |
 | Target policy | **Target: common altitude** |
-| Numerical planner | **Physical generator** and **C++ construction (off: Python)** |
+| Numerical planner | Fixed physical C++; no backend/generator switch |
 | Aircraft profile | **Profile JSON** and **Load profile**, where profile loading is supported |
 
 Own-aircraft physical limits and profile identity remain visible in this view.
 The PX4/Gazebo editor hides profile-loading controls because its pinned native
-airframe is fixed. Existing generator/backend compatibility checks apply;
-uncheck C++ before selecting the geometric generator. New coupled 3D missions
-retain the [physical/C++ defaults](planner_defaults.md).
+airframe is fixed. Production uses fixed physical C++. Archived incompatible settings remain
+visible for inspection with launch disabled; use an explicit migration to a new
+file. See the [production/backend policy](planner_defaults.md).
 
 **Reset** restores the original scenario, input values and numerical choices,
 and returns to Mission view. View changes do not apply, clear or repair input.

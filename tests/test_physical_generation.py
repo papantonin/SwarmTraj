@@ -13,7 +13,7 @@ from swarm_sim.trajectory2d.planning import mission_document, validate_individua
 
 
 def mission_case(speed=13., **changes):
-    config = Config(dimensions=3, numerical_backend='python', generator_mode='physical_mission', target=(500., 0.),
+    config = Config(dimensions=3, numerical_backend='cpp', generator_mode='physical_mission', target=(500., 0.),
         target_altitude=30., descent_angle_deg=30., max_descent_rate=8.,
         horizon=120., cruise_altitude_range=(70., 100.), max_extra_loiter=0.,
         candidates=1, attempts=3)
@@ -22,46 +22,15 @@ def mission_case(speed=13., **changes):
     return snapshot, config
 
 
-@pytest.mark.parametrize('changes', [{}, {'target': (500., 500.), 'horizon': 210.,
-    'max_descent_rate': 10., 'cruise_altitude_range': (30., 120.), 'cruise_levels': 2,
-    'speed_profile': 'smooth', 'speed_profile_range': (10., 14.)}])
-def test_proposal_caching_preserves_complete_plans_and_search_signatures(monkeypatch, changes):
-    import swarm_sim.trajectory2d.physical_generation as generation
-    snapshot, config = mission_case(speed=12., **changes)
-    cached = {name: getattr(generation, name) for name in ('_approach_headroom', '_terminal_distance')}
-    for function in cached.values():
-        function.cache_clear()
-    cold = plan_mission((snapshot,), config)
-    warm = plan_mission((snapshot,), config)
-    assert cold.validated and warm.validated
-    for name, function in cached.items():
-        monkeypatch.setattr(generation, name, function.__wrapped__)
-    uncached = plan_mission((snapshot,), config)
-    assert uncached.validated
-    # Compare full selected arrays, candidate counts and search work; no timing
-    # assertions. Independent validation still checks every returned trajectory.
-    for result in (cold, warm):
-        assert result.counts == uncached.counts and result.search_nodes == uncached.search_nodes
-        assert [p.to_dict() for p in result.plans] == [p.to_dict() for p in uncached.plans]
-        assert all(validate_individual(p, snapshot, config) for p in result.plans)
 
 
-def test_proposal_cache_keeps_mutable_config_inputs_on_uncached_path():
-    snapshot, config = mission_case(speed=12.)
-    expected = plan_mission((snapshot,), config)
-    actual = plan_mission((snapshot,), replace(config, target=list(config.target)))
-    assert expected.validated and actual.validated
-    assert actual.counts == expected.counts and actual.search_nodes == expected.search_nodes
-    assert [p.to_dict() for p in actual.plans] == [p.to_dict() for p in expected.plans]
 
 
 @pytest.mark.parametrize('speed', [13., 14.])
 def test_complete_physical_mission_without_legacy_vertical_or_scalar_seed(monkeypatch, speed):
     def forbidden(*args, **kwargs):
         pytest.fail('direct physical generation must not use legacy conversion or scalar seeds')
-    monkeypatch.setattr('swarm_sim.trajectory2d.planning.build_profile', forbidden)
-    monkeypatch.setattr('swarm_sim.trajectory2d.coupled_planning.convert_candidate', forbidden)
-    monkeypatch.setattr('swarm_sim.trajectory2d.kinodynamic_recovery.recovery_seed_acceleration', forbidden)
+    monkeypatch.setattr('swarm_sim.trajectory2d.planning.build_profile', forbidden, raising=False)
     snapshot, config = mission_case(speed)
     result = plan_mission((snapshot,), config)
     assert result.validated, (result.status, result.diagnostics)
@@ -147,7 +116,7 @@ def test_full_mission_rejects_insufficient_time_without_extending_requirements(c
     dict(speed_profile='smooth', speed_profile_range=(10., 14.),
          reservation_policy='grid', passage_guidance='safe_windows')])
 def test_unsupported_physical_requests_are_explicit_errors(changes):
-    with pytest.raises(ValueError, match='generator_mode'):
+    with pytest.raises(ValueError, match='generator_mode|coupled 3D'):
         mission_case(**changes)
 
 
@@ -225,8 +194,7 @@ def test_existing_validator_rejects_corrupted_physical_mission(corruption):
 def test_requested_rich_profiles_are_actually_flown_without_geometric_conversion(monkeypatch, levels, speed):
     def forbidden(*args, **kwargs):
         pytest.fail('physical rich profiles must not use geometric conversion')
-    monkeypatch.setattr('swarm_sim.trajectory2d.planning.build_profile', forbidden)
-    monkeypatch.setattr('swarm_sim.trajectory2d.coupled_planning.convert_candidate', forbidden)
+    monkeypatch.setattr('swarm_sim.trajectory2d.planning.build_profile', forbidden, raising=False)
     snapshot, config = mission_case(speed=12., target=(500., 500.), max_descent_rate=10.,
         horizon=210., cruise_altitude_range=(30., 120.), cruise_levels=levels,
         speed_profile=speed, speed_profile_range=(10., 14.), attempts=4)
@@ -275,19 +243,6 @@ def test_rich_requests_fail_closed_when_time_or_level_range_is_insufficient():
     assert result.diagnostics['catalogs'][0]['rejections'] == {'physical_cruise_levels_range': 2}
 
 
-def test_real_clock_speed_bump_preserves_joins_bounds_and_acceleration():
-    from swarm_sim.trajectory2d.physical_generation import _speed_bump
-    snapshot, config = mission_case(speed=12., speed_profile='smooth', speed_profile_range=(10., 14.))
-    times = np.linspace(0., config.horizon, 12001)
-    release = 10.
-    reference, derivative, end = _speed_bump(snapshot, config, 0, release, times)
-    assert reference.min() >= 10. and reference.max() <= 14.
-    assert np.ptp(reference) >= .2
-    assert np.max(np.abs(derivative)) <= config.speed_profile_acceleration
-    assert np.all(reference[times <= release + 4.] == snapshot.speed)
-    assert np.all(reference[times >= end] == snapshot.speed)
-    active = (times > release + 4.01) & (times < end - .01)
-    np.testing.assert_allclose(np.gradient(reference, times)[active], derivative[active], atol=1e-5)
 
 
 def test_rich_catalogs_are_spawn_reproducible_and_keep_own_metadata():
@@ -332,7 +287,7 @@ def test_earliest_legal_departure_is_explored_without_widening_bounds():
 def test_original_five_aircraft_short_mission_recovers_without_relaxing_inputs():
     from itertools import combinations
     from swarm_sim.trajectory2d.planning import continuous_distance_lower_bound, required_distance
-    config = Config(dimensions=3, numerical_backend='python', generator_mode='physical_mission', target_altitude=30.,
+    config = Config(dimensions=3, numerical_backend='cpp', generator_mode='physical_mission', target_altitude=30.,
         max_descent_rate=10., descent_angle_deg=30., cruise_altitude_range=(30., 120.),
         planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
         selection_policy='max_margin', conflict_guidance='witness', obstacle_routing='spatial')
@@ -402,7 +357,7 @@ def test_free_obstructed_approach_explores_without_overriding_an_assigned_sector
     from pathlib import Path
     from swarm_sim.px4_fleet import load_fleet
     from swarm_sim.trajectory2d.planning import _candidate
-    snapshots, config = load_fleet(Path(__file__).resolve().parents[1]/'examples/scenarios/px4_four_loiter.json')
+    snapshots, config = load_fleet(Path(__file__).resolve().parents[1]/'examples/scenarios/px4_four_loiter_cpp.json')
     config = replace(config, generator_mode='physical_mission')
     snapshot = snapshots[drone_id]
     def propose(angle=None):

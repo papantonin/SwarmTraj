@@ -1,82 +1,49 @@
-# Coordinated trajectories with vertical separation
+# Coordinated 3D trajectories
 
-The launcher now uses 3D mode by default. From the repository root:
+Production uses the coupled 3D physical C++ planner and C++ constrained local
+execution. Python provides preparation, visualization, scheduling and independent
+validation/observation. The historical `trajectory2d` package and
+`examples/trajectory_2d.py` launcher names remain compatible aliases for the 3D
+workflow; planar, geometric-generator and legacy-flight production modes are
+retired. See [backend policy and archive migration](planner_defaults.md).
 
 ```bash
+bash scripts/setup.sh --trajectory
 .venv/bin/python examples/trajectory_3d.py
-# The existing launcher opens the same 3D mode:
-.venv/bin/python examples/trajectory_2d.py
-# To keep using the planar prototype:
-.venv/bin/python examples/trajectory_2d.py --dimensions 2
+.venv/bin/python examples/trajectory_3d.py --no-gui
 ```
 
-The default engine is a **coupled 3D point-mass model**: total airspeed,
-flight-path angle, bank, lift, thrust and drag are linked. See the
-[flight model, equations and limitations](flight_model_3d.md).
-The older 2.5D kinematic model remains available with `--flight-model legacy`.
-Default physical parameters are illustrative, not those of a real aircraft.
-The launcher defaults to physical C++ planning with one worker. Explicit
-`--workers 0` selects automatic spawn workers; Python planning retains its
-automatic CLI worker default. See [defaults and compatibility](planner_defaults.md)
-and [performance measurements and settings](planning_performance.md).
-Catalogs are built adaptively by default, with most-constrained-first search
-and detailed rejection/conflict reports. See
-[adaptive planning and diagnostics](adaptive_planning.md). The fixed-catalog
-comparison is available with `--planning-strategy fixed --search-order id --selection-policy first`.
-Expanded catalogs use sampled conflict witnesses to bias new proposals by
-default; `--conflict-guidance none` disables this heuristic. Full integrated
-validation remains mandatory; see [conflict guidance](conflict_guidance.md).
-The CLI now refines feasible combinations to prefer greater robust separation
-margin; see [margin-preferring selection](margin_selection.md).
-Arrival deadlines and minimum post-passage observation are now configurable
-independently of the total horizon; see [mission timing](mission_timing.md).
-Optional moving preparation and full-horizon cell/time allocation are described
-in [mission pipeline](mission_pipeline.md); use `--prepare-in-flight` and
-`--reservation-policy grid` to enable them explicitly.
-Additional cruise levels and smooth speed profiles are opt-in through
-`--cruise-levels` and `--speed-profile`; `--interval-guidance safe_windows`
-uses reservation windows during expanded-candidate generation. See
-[settings and comparison](free_windows_profiles.md).
-`--profile-policy adaptive_mixed` explicitly allows simple and rich candidates
-in one adaptive catalog; `--cruise-levels` then sets a maximum. Without that
-flag, profile requests remain strict. See [mixed catalogs](mixed_profiles.md).
-With `--generator-mode geometric`, `--passage-guidance safe_windows` fits local speed variation to
-[intermediate cell windows](intermediate_passages.md); it requires explicit
-smooth-speed permission and grid reservations, and remains off by default.
-`--candidate-guidance rejections` separately adapts initial and expanded
-proposals from their own rejection history; see the
-[parameter campaign and construction limits](parameter_campaign.md).
+The model couples total airspeed, flight-path angle, bank, lift, thrust and drag;
+see [equations and limitations](flight_model_3d.md). Defaults are illustrative,
+not calibrated aircraft. The physical generator integrates complete missions,
+including initial loiter, actual target passage, recovery and onward flight.
+Every candidate receives independent physical validation before joint selection,
+followed by independent final separation, reservation and obstacle rechecks.
 
-Interface labels and runtime messages are in English.
+The CLI uses adaptive catalogs, MRV ordering, witness-guided expansion and
+margin-preferring selection. Candidate budgets and safety limits are never
+relaxed. Explicit workers use deterministic spawn processes; every numerical
+planner operation remains C++. See [adaptive diagnostics](adaptive_planning.md),
+[conflict guidance](conflict_guidance.md) and [margin selection](margin_selection.md).
 
-The default `physical_mission` generator constructs complete
-individual missions directly through the coupled physical model, including an
-explicit recovery primitive from the actual passage state. It supports one to
-three cruise levels and constant or smooth airspeed references, including strict
-and explicitly declared mixed profiles. Geometric intermediate-passage fitting
-is unsupported and rejected explicitly. Select `--generator-mode geometric`
-to use the historical generator, including geometric passage-window fitting.
-See [physical construction, scope and verification](phase2_kinodynamic.md).
-The editor's **Physical generator** checkbox selects the same mode; it is
-disabled for planar/legacy flight. See the [migration guide](generator_migration.md)
-for versioned shared scenarios and the separate PX4/Gazebo workflow.
+Physical generation supports one to three cruise levels, constant/smooth speed
+references, strict or declared mixed families, static obstacles, reservations,
+free departure windows and own-rejection feedback. Geometric passage-window
+fitting is retired. See [physical construction](phase2_kinodynamic.md),
+[mission timing](mission_timing.md) and [mission preparation](mission_pipeline.md).
+Historical comparison guides retain their old experimental results.
 
-The physical generator defaults to `--numerical-backend cpp`; run
-`./scripts/build_native.sh` in an existing environment. Explicit
-`--numerical-backend python` selects the independent reference implementation.
-The native backend covers physical proposals, construction,
-independent validation, catalogs and bounded joint selection. With `--workers 1`
-the complete mission planner runs in one native call; multiple workers retain
-Python's deterministic spawn scheduling. Both paths retain independent final checks;
-the editor and shared PX4 scenario v3 records retain the explicit choice. See the
-[native kernel guide](native_kernel.md) for supported modes and measurements.
+The editor has Mission and Advanced views with fixed physical C++ calculation.
+There is no Python/geometric toggle. Archived scenarios retain their recorded
+values for inspection; incompatible records cannot launch until explicitly
+migrated to a new file. Native dependencies are mandatory, with no silent
+fallback. Global observers stay independent and do not supply peer information
+or true disturbance to the controllers. PX4/Gazebo remains a separate spatial
+experiment with its own controllers and physics.
 
-`--execution-backend cpp` independently selects the compiled constrained local
-controller and simulator integration for coupled 3D execution. Its default is
-`python`; both geometric and physical plans are supported. Global observation
-and final acceptance remain Python. This choice does not change the editor's
-numerical-backend checkbox or the separate PX4/Gazebo workflow. Planar, legacy flight
-and the historical legacy controller reject C++ execution explicitly.
+Independent arrival altitudes remain a supported physical 3D objective when
+**Common altitude** is unchecked or `--arrival-mode layers` is selected. This
+still uses coupled C++ dynamics, not the retired planar/legacy generator.
 
 ## Preparing drones and destination
 

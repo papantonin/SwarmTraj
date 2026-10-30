@@ -109,56 +109,21 @@ def simulate_pullout(speed: float, config, *, angle_deg: float | None = None):
 
 
 def _integrate_pullout(state, config, max_duration_s):
-    dt = float(config.dt)
-    speed, target_gamma, entry_altitude = float(state[3]), float(state[5]), float(state[2])
-    states = [state.copy()]
-    controls = []
-    f = config.flight
-    # Bound the experiment independently from the mission's arbitrary horizon.
-    # The horizon still constrains real candidates during full validation.
-    rate_limit = np.deg2rad(f.max_flight_path_rate_deg_s)
-    if rate_limit <= 0:
+    """Native laboratory primitive with the original bounded step allowance."""
+    from .native_backend import evaluate, _path
+    rate = min(np.deg2rad(config.flight.max_flight_path_rate_deg_s),
+               .97 * config.max_vertical_acceleration / state[3])
+    if rate <= 0:
         return None
-    max_steps = int(np.ceil((abs(target_gamma) / min(rate_limit, .97 * config.max_vertical_acceleration / speed)
-                            + 2.0) / dt))
+    steps = int(np.ceil((abs(state[5]) / rate + 2.) / config.dt))
     if max_duration_s is not None:
-        max_steps = min(max_steps, int(np.floor(max_duration_s / dt + 1e-9)))
-    for _ in range(max_steps):
-        gamma = float(state[5])
-        if gamma >= -1e-4:
-            break
-        # Choose a gamma rate with explicit margin to the vertical-acceleration
-        # limit. Keep airspeed approximately constant by trim thrust/airbrake.
-        gamma_rate = min(rate_limit, .97 * config.max_vertical_acceleration / speed,
-                         -gamma / dt)
-        ceiling = float(f.load_ceiling(state[3]))
-        rate_by_load = G * (ceiling - np.cos(gamma)) / state[3]
-        if rate_by_load <= 0:
-            return None
-        gamma_rate = min(gamma_rate, .90 * rate_by_load)
-        if gamma_rate <= 0:
-            return None
-        load = (np.cos(gamma) + state[3] * gamma_rate / G)
-        axial = f.drag(state[3], load) + G * np.sin(gamma)
-        if not -f.max_brake_acceleration <= axial <= f.max_thrust_acceleration:
-            return None
-        control = np.array([max(0.0, axial), max(0.0, -axial), load, 0.0])
-        # Verify held-control states throughout the primitive, not just endpoints.
-        interior = np.stack([propagate(state, control, fraction * dt, f, substeps=4)
-                             for fraction in (0., .25, .5, .75, 1.)])
-        following = propagate(state, control, dt, f)
-        checked = np.vstack((interior, following))
-        if not envelope_ok(checked, np.broadcast_to(control, (6, 4)), config):
-            return None
-        state = following
-        if not np.all(np.isfinite(state)):
-            return None
-        states.append(state.copy())
-        controls.append(control.copy())
-    if abs(state[5]) > 1e-4 or len(controls) == 0:
+        steps = min(steps, int(np.floor(max_duration_s / config.dt + 1e-9)))
+    path, reason = _path(evaluate('pullout', state, (), config, steps=steps))
+    if reason:
         return None
-    altitude_loss = float(entry_altitude - min(s[2] for s in states))
-    return Pullout(np.asarray(states), np.asarray(controls), len(controls) * dt, altitude_loss)
+    states, controls, _, _ = path
+    return Pullout(states, controls, len(controls) * config.dt,
+                   float(states[0, 2] - states[:, 2].min()))
 
 
 def recovery_seed_acceleration(speed: float, config):
@@ -182,7 +147,7 @@ def _cached_seed(speed, dt, angle, target_altitude, min_altitude, max_altitude,
                  max_climb_rate, descent_rate_limit, max_vertical_acceleration, flight, limits):
     """Only immutable physical inputs enter the cache key."""
     config = SimpleNamespace(
-        coupled_flight=True, dt=dt, descent_angle_deg=angle,
+        coupled_flight=True, aircraft_profiles=(), dt=dt, descent_angle_deg=angle,
         target_altitude=target_altitude, min_altitude=min_altitude,
         max_altitude=max_altitude, max_climb_rate=max_climb_rate,
         descent_rate_limit=descent_rate_limit,

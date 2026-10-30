@@ -31,18 +31,16 @@ for the simulation-specific mission requirement and unchanged planner scope.
 Closing it cancels without starting the simulator. The scenario schema is
 `swarm-px4-editor-fleet-v3`, with explicit `mission.generator_mode` and
 `mission.numerical_backend`. Fleet-v2 retains its generator and selects Python.
-Legacy fleet-v1 files remain readable and select geometric/Python unless explicitly
-overridden with `--generator-mode physical_mission` before editing/planning.
-Fresh scenes use physical/C++ planning with one worker; saved records retain
-their choices. The new `px4_four_loiter_cpp.json` is an explicit v3 example;
-the original `px4_four_loiter.json` remains a historical v1 fixture.
-See [default selection](planner_defaults.md). The editor checkbox offers the same choice; `--workers 1|2|0` configures catalog
-processes (serial, two, or automatic). The **C++ construction (off: Python)**
-checkbox or `--numerical-backend cpp` selects native physical reference
-construction after `./scripts/build_native.sh`; it requires the physical
-generator and is persisted in v3. These settings do not alter PX4 instance
-isolation or the native flight gates. Single-aircraft JSON is intentionally not silently
-converted into four coincident aircraft. IDs must be exactly 0, 1, 2, 3.
+Archived fleet-v1/v2/v3 records remain readable with their original generator
+and backend values; retired production settings cannot launch or be replaced by
+CLI aliases. Use [explicit migration](planner_defaults.md) to write a new scenario.
+Fresh scenes and `px4_four_loiter_cpp.json` use the sole physical C++ planner;
+`px4_four_loiter.json` remains an unchanged historical v1 fixture.
+There is no generator/backend checkbox. `--workers 1|2|0` selects serial, two
+spawn processes or automatic scheduling; all numerical work remains C++.
+Instance isolation and every native flight gate remain unchanged. Single-aircraft
+JSON is never silently converted into four coincident aircraft. IDs must be
+exactly 0, 1, 2, 3.
 Ground spawn XY points must be at least 30 m apart even if flight altitudes
 differ, because the warm bootstrap first initializes all aircraft on the ground.
 

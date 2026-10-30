@@ -17,7 +17,7 @@ def scene():
 
 
 def test_rightmost_drone_receives_rightmost_side_on_half_circle():
-    assignments = approach_angles(scene(), Config(target=(0, 0), approach_spread_deg=180))
+    assignments = approach_angles(scene(), Config(dimensions=3, target=(0, 0), approach_spread_deg=180))
     expected = {0: 0, 1: -180, 2: -60, 3: -120}
     for key, degrees in expected.items():
         assert abs(wrap(assignments[key] - np.deg2rad(degrees))) < 1e-12
@@ -25,7 +25,7 @@ def test_rightmost_drone_receives_rightmost_side_on_half_circle():
 
 def test_simple_straight_gate_links_have_fewer_crossings_than_id_allocation():
     snapshots = scene()
-    config = Config(target=(0, 0), approach_spread_deg=180)
+    config = Config(dimensions=3, target=(0, 0), approach_spread_deg=180)
 
     def crossing_count(assignment):
         angles = np.array([assignment[s.drone_id] for s in snapshots])
@@ -46,7 +46,7 @@ def test_simple_straight_gate_links_have_fewer_crossings_than_id_allocation():
 
 
 def test_historical_id_allocation_is_explicit_and_invalid_policy_is_rejected():
-    config = Config(target=(0, 0), approach_spread_deg=180, approach_assignment="id")
+    config = Config(dimensions=3, target=(0, 0), approach_spread_deg=180, approach_assignment="id")
     assignments = approach_angles(scene(), config)
     np.testing.assert_allclose([assignments[i] for i in range(4)], np.linspace(-np.pi, 0, 4))
     with pytest.raises(ValueError, match="approach_assignment"):
@@ -55,7 +55,7 @@ def test_historical_id_allocation_is_explicit_and_invalid_policy_is_rejected():
 
 @pytest.mark.parametrize("spread", [30, 90, 180, 270, 360])
 def test_all_slots_are_used_exactly_once_and_input_order_does_not_matter(spread):
-    config = Config(target=(0, 0), approach_spread_deg=spread)
+    config = Config(dimensions=3, target=(0, 0), approach_spread_deg=spread)
     snapshots = scene()
     assignments = approach_angles(snapshots, config)
     for reordered in permutations(snapshots):
@@ -70,7 +70,7 @@ def test_all_slots_are_used_exactly_once_and_input_order_does_not_matter(spread)
 
 
 def test_ids_do_not_determine_sides_for_distinct_positions():
-    config = Config(target=(0, 0), approach_spread_deg=180)
+    config = Config(dimensions=3, target=(0, 0), approach_spread_deg=180)
     first = scene()
     relabelled = tuple(replace(s, drone_id=label) for s, label in zip(first, [42, 7, 2, 123]))
     original = approach_angles(first, config)
@@ -85,7 +85,7 @@ def test_matching_minimises_global_proxy_distance_against_all_permutations(sprea
     positions = rng.uniform(-300, 300, (4, 2))
     snapshots = tuple(Snapshot(i, (*xy, 0, 0), speed) for i, (xy, speed) in
                       enumerate(zip(positions, [8, 12, 16, 10])))
-    config = Config(target=(20, -15), approach_spread_deg=spread)
+    config = Config(dimensions=3, target=(20, -15), approach_spread_deg=spread)
     assigned = approach_angles(snapshots, config)
     angles = np.array([assigned[s.drone_id] for s in snapshots])
     radius = max(120, max(6 * s.speed / config.limits.max_rate(s.speed) for s in snapshots))
@@ -101,18 +101,18 @@ def test_assignment_is_translation_and_rotation_equivariant():
     rotation = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
     translation = np.array([340, -120])
     moved = tuple(replace(s, state=(*(rotation @ s.state[:2] + translation), *s.state[2:])) for s in original)
-    before = approach_angles(original, Config(target=(0, 0), approach_spread_deg=180))
-    after = approach_angles(moved, Config(target=tuple(translation), approach_spread_deg=180))
+    before = approach_angles(original, Config(dimensions=3, target=(0, 0), approach_spread_deg=180))
+    after = approach_angles(moved, Config(dimensions=3, target=tuple(translation), approach_spread_deg=180))
     for drone_id in before:
         assert abs(wrap(after[drone_id] - before[drone_id] - angle)) < 1e-12
 
 
 def test_disabled_spread_single_drone_and_coincident_positions_are_deterministic():
-    assert approach_angles(scene(), Config()) == {i: None for i in range(4)}
-    one = approach_angles(scene()[:1], Config(target=(0, 0), approach_spread_deg=180))
+    assert approach_angles(scene(), Config(dimensions=3, )) == {i: None for i in range(4)}
+    one = approach_angles(scene()[:1], Config(dimensions=3, target=(0, 0), approach_spread_deg=180))
     assert one[0] == pytest.approx(np.arctan2(-200, 90))
     coincident = tuple(replace(s, state=(0, 0, 0, 0)) for s in scene())
-    config = Config(target=(0, 0), approach_spread_deg=360)
+    config = Config(dimensions=3, target=(0, 0), approach_spread_deg=360)
     assignments = approach_angles(coincident, config)
     assert assignments == approach_angles(coincident[::-1], config)
     assert len(set(assignments.values())) == 4

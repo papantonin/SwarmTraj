@@ -17,15 +17,12 @@ import swarm_sim.trajectory2d as trajectory
     (["--manual-cruise"], 30, None),
     (["--descent-angle", "10"], 30, (30, 120)),
     (["--descent-angle", "0"], 30, (30, 120)),
-    (["--flight-model", "legacy"], 30, (30, 120)),
     (["--approach-assignment", "id"], 30, (30, 120)),
     (["--workers", "2", "--rollout-check-interval", "1"], 30, (30, 120)),
     (["--planning-strategy", "fixed", "--search-order", "id", "--initial-candidates", "2", "--attempts", "30"], 30, (30, 120)),
     (["--conflict-guidance", "none"], 30, (30, 120)),
     (["--candidate-guidance", "rejections"], 30, (30, 120)),
     (["--profile-policy", "adaptive_mixed", "--cruise-levels", "2",
-      "--speed-profile", "smooth", "--speed-profile-range", "10", "14"], 30, (30, 120)),
-    (["--generator-mode", "geometric", "--passage-guidance", "safe_windows", "--reservation-policy", "grid",
       "--speed-profile", "smooth", "--speed-profile-range", "10", "14"], 30, (30, 120)),
     (["--reservation-policy", "grid", "--reservation-cell-size", "10"], 30, (30, 120)),
     (["--reservation-policy", "grid", "--interval-guidance", "safe_windows", "--cruise-levels", "2",
@@ -151,7 +148,7 @@ def test_cli_passes_disturbances_to_local_execution(monkeypatch, tmp_path):
 
     def inspect(plans, config, **options):
         assert options['wind'] == .2 and options['wind_model'] == 'gust'
-        assert options['wind_heading_deg'] == 35 and options['controller'] == 'legacy'
+        assert options['wind_heading_deg'] == 35 and options['controller'] == 'constrained'
         assert options['position_noise'] == .02 and options['disturbance_seed'] == 9
         np.testing.assert_allclose(np.linalg.norm(options['position_biases'], axis=1), .1)
         np.testing.assert_allclose(options['clock_drifts'], np.linspace(-.0002, .0002, 4))
@@ -161,7 +158,7 @@ def test_cli_passes_disturbances_to_local_execution(monkeypatch, tmp_path):
     script = Path(__file__).resolve().parents[1] / 'examples' / 'trajectory_2d.py'
     namespace = runpy.run_path(str(script))
     monkeypatch.setattr(sys, 'argv', [str(script), '--no-gui', '--output', str(tmp_path),
-        '--wind', '.2', '--wind-model', 'gust', '--wind-heading', '35', '--tracking-controller', 'legacy',
+        '--wind', '.2', '--wind-model', 'gust', '--wind-heading', '35', '--tracking-controller', 'constrained',
         '--position-bias', '.1', '--position-noise', '.02', '--disturbance-seed', '9', '--clock-drift', '.0002'])
     with pytest.raises(SimulationReached):
         namespace['main']()

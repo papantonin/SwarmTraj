@@ -10,17 +10,17 @@ from swarm_sim.trajectory2d import Config, plan_mission, separate_loiter_snapsho
 from swarm_sim.trajectory2d import flight3d as flight
 from swarm_sim.trajectory2d import native_backend as native
 from swarm_sim.trajectory2d.execution import Executor, check_execution_backend, simulate
-from swarm_sim.trajectory2d.tracking import protect_control
+from swarm_sim.trajectory2d.tracking import held_control_ok
 
 HAS_NATIVE = importlib.util.find_spec('swarm_sim._trajectory_native') is not None
 requires_native = pytest.mark.skipif(not HAS_NATIVE, reason='optional C++ extension not built')
 
 
 def test_execution_backend_is_separate_explicit_and_fails_closed(monkeypatch):
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
-    check_execution_backend(c, 'constrained', 'python')
-    for config, controller, backend in ((c, 'constrained', 'bad'),
-            (Config(), 'constrained', 'cpp'), (c, 'legacy', 'cpp')):
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
+    check_execution_backend(c, 'constrained', 'cpp')
+    for config, controller, backend in ((c, 'constrained', 'python'), (c, 'constrained', 'bad'),
+            (Config(dimensions=2), 'constrained', 'cpp'), (c, 'legacy', 'cpp')):
         with pytest.raises(ValueError):
             check_execution_backend(config, controller, backend)
     class OldKernel:
@@ -34,7 +34,7 @@ def test_execution_backend_is_separate_explicit_and_fails_closed(monkeypatch):
 @requires_native
 @pytest.mark.parametrize('substeps', [1, 4, 8])
 def test_native_sampled_integration_is_independent_per_duration(substeps):
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     s = np.array([10., 20., 80., 12., .2, -.1, .3])
     u = flight.trim_control(s, c.flight)
     durations = np.array([.2, 0., .07, -.1, .2])
@@ -51,7 +51,7 @@ def test_native_sampled_integration_is_independent_per_duration(substeps):
 
 @requires_native
 def test_execution_binding_rejects_true_wind_partial_history_and_invalid_intervals():
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     s = np.array([0., 0., 80., 12., 0., 0., 0.])
     u = flight.trim_control(s, c.flight)
     for dt in (0., -.2, np.nan, np.inf):
@@ -69,8 +69,8 @@ def test_execution_binding_rejects_true_wind_partial_history_and_invalid_interva
 
 
 @requires_native
-def test_random_protection_and_impossible_fallback_preserve_python_decisions():
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+def test_native_protection_is_independently_safe_and_impossible_fallback_is_retained():
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     rng = np.random.default_rng(546)
     fixtures = [(np.array([0., 0., -1., 12., 0., 0., 0.]), np.array([1., 0., 1., 0.]))]
     for _ in range(100):
@@ -80,11 +80,10 @@ def test_random_protection_and_impossible_fallback_preserve_python_decisions():
     outcomes = set()
     for state, request in fixtures:
         original = state.copy()
-        a, ai, af = protect_control(state, request, c, .2)
         b, bi, bf = native.protect_control(state, request, c, .2)
-        assert (ai, af) == (bi, bf)
+        if bf:
+            assert held_control_ok(state, b, c, .2)
         outcomes.add((bi, bf))
-        np.testing.assert_allclose(a, b, rtol=0, atol=1e-12)
         np.testing.assert_array_equal(state, original)
     assert {(True, False), (True, True), (False, True)} <= outcomes
 
@@ -92,7 +91,7 @@ def test_random_protection_and_impossible_fallback_preserve_python_decisions():
 @requires_native
 def test_held_command_classification_at_envelope_boundaries():
     from swarm_sim.trajectory2d.tracking import held_control_ok
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     state = np.array([0., 0., 80., 12., .2, 0., 0.])
     fixtures = []
     for speed in (c.limits.min_speed, c.limits.max_speed):
@@ -128,7 +127,7 @@ def scene(request):
             flight=replace(c.flight, parasitic_drag=.0033, max_thrust_acceleration=4.5))
         c = replace(c, aircraft_profiles=((s.drone_id, profile),))
     elif request.param == 'geometric':
-        c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
+        c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30., descent_angle_deg=30.,
             max_descent_rate=10., horizon=120., cruise_altitude_range=(30., 120.),
             candidates=1, attempts=30)
         s = replace(separate_loiter_snapshot()[0], altitude=30.)
@@ -174,7 +173,7 @@ def test_complete_execution_decisions_and_physical_states(scene, profile):
     before = [p.to_dict() for p in plans]
     a = simulate(plans, c, **settings)
     b = simulate(plans, c, execution_backend='cpp', **settings)
-    assert a.report['execution_backend'] == 'python'
+    assert a.report['execution_backend'] == 'cpp'
     assert b.report['execution_backend_identity']['execution_api'] == 1
     for key in ('execution_validated', 'execution_failures', 'physical_limits_verified',
                 'controller_protection_verified', 'tube_conditions_verified'):

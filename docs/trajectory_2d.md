@@ -1,5 +1,11 @@
 # Coordinated 2D trajectory prototype
 
+This is a historical study/guide. Its Python, geometric and planar/legacy
+execution instructions require a historical revision (available in Git at
+`300de37`). Current production uses only C++; see
+[production policy and explicit scenario migration](planner_defaults.md).
+Historical results and failed trials below are preserved as recorded.
+
 The launcher now opens 3D mode by default, as described in the
 [3D guide](trajectory_3d.md). To reproduce the planar scenarios in this document,
 add `--dimensions 2` to the commands below.

@@ -66,7 +66,7 @@ def check_sources(manifest):
 
 
 def base_case(n, seed):
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python',
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp',
         target_altitude=30, max_descent_rate=10,
         descent_angle_deg=30, cruise_altitude_range=(30, 120), seed=seed,
         planning_strategy='adaptive', initial_candidates=2, search_order='mrv',
@@ -183,6 +183,7 @@ def make_jobs(counts, seeds, random_scenes, suites):
 
 def decode(job):
     fields = dict(job['config'])
+    fields.setdefault('dimensions', 2)
     fields.setdefault('generator_mode', 'geometric')
     fields.setdefault('numerical_backend', 'python')
     if (fields['generator_mode'] not in ('geometric', 'physical_mission', 'physical_recovery_seed')
@@ -418,13 +419,13 @@ def main(argv=None):
                         default=['controls', 'core', 'random', 'ablation', 'replay'])
     parser.add_argument('--timeout', type=float, default=120)
     parser.add_argument('--execute', action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument('--execution-backend', choices=('python', 'cpp'), default='python',
+    parser.add_argument('--execution-backend', choices=('cpp',), default='cpp',
                         help='Explicit local execution backend for accepted saved plans; observer stays Python')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--reference', type=Path, help='Replay saved manifest inputs instead of regenerating scenes')
-    parser.add_argument('--generator-mode', choices=('geometric', 'physical_mission', 'physical_recovery_seed'),
+    parser.add_argument('--generator-mode', choices=('physical_mission',),
                         help='Explicit generator override; all other saved mission inputs stay unchanged')
-    parser.add_argument('--numerical-backend', choices=('python', 'cpp'),
+    parser.add_argument('--numerical-backend', choices=('cpp',),
                         help='Explicit physical-planner backend override; cpp requires coupled 3D physical generation')
     parser.add_argument('--planning-workers', type=int,
                         help='Explicit catalog process override, except saved serial/spawn replay pairs')

@@ -44,17 +44,6 @@ class ScenarioEditor:
         self.heading_input = TextBox(self.figure.add_axes([0.85, 0.44, 0.11, 0.035]), "Heading (°) ")
         self.speed_input = TextBox(self.figure.add_axes([0.85, 0.39, 0.11, 0.035]),
                                   "Airspeed (m/s) " if config.coupled_flight else "XY speed (m/s) ")
-        self.generator = CheckButtons(self.figure.add_axes([0.08, 0.9025, 0.31, 0.025]),
-                                      ['Physical generator'], [config.generator_mode != 'geometric'])
-        self.generator.active = config.coupled_flight
-        self.generator.labels[0].set_fontsize(9)
-        self.generator_help = self.figure.text(0.41, 0.9125, 'Off: geometric generator', fontsize=8)
-        self.generator.on_clicked(self.toggle_generator)
-        self.backend = CheckButtons(self.figure.add_axes([0.62, 0.9025, 0.35, 0.025]),
-                                    ['C++ construction (off: Python)'], [config.numerical_backend == 'cpp'])
-        self.backend.labels[0].set_fontsize(9)
-        self.backend.on_clicked(self.toggle_backend)
-        self._sync_backend()
         self.apply_button = Button(self.figure.add_axes([0.77, 0.335, 0.19, 0.04]), "Apply")
         self.horizon_input = TextBox(self.figure.add_axes([0.19, 0.355, 0.08, 0.035]),
                                      "Horizon (s) ", initial=f"{config.horizon:g}")
@@ -143,7 +132,7 @@ class ScenarioEditor:
             self.post_arrival_input, self.spread_input, self.descent_input,
             self.cruise_min_input, self.cruise_max_input, self.delay_min_input,
             self.delay_max_input, self.radius_input, self.activation_input, self.profile_input]
-        self._view_widgets = [*self._inputs, self.generator, self.backend, self.auto_cruise,
+        self._view_widgets = [*self._inputs, self.auto_cruise,
             self.common_altitude, self.loiter_direction, self.profile_button]
         for widget in (self.horizon_input, self.deadline_input, self.post_arrival_input,
                        self.spread_input, self.descent_input, self.cruise_min_input,
@@ -197,7 +186,6 @@ class ScenarioEditor:
             widget.ax.set_position(position)
         self.status.set_position((.055, .025))
         self.status.set_fontsize(9)
-        self.generator_help.set_visible(False)
         self.mission_summary.set_visible(not self.advanced)
         self.selection_help.set_visible(not self.advanced)
         self.timing_help.set_visible(self.advanced)
@@ -220,8 +208,6 @@ class ScenarioEditor:
                 'delay_min_input': [.385, .385, .09, .036],
                 'delay_max_input': [.57, .385, .075, .036],
                 'spread_input': [.155, .235, .10, .036],
-                'generator': [.055, .16, .27, .035],
-                'backend': [.36, .16, .285, .035],
             }
             if self.config.dimensions == 3:
                 positions.update(auto_cruise=[.055, .29, .22, .05],
@@ -271,10 +257,13 @@ class ScenarioEditor:
             f'Arrival deadline: {deadline} · Minimum after arrival: {self.post_arrival_input.text} s\n'
             f'Cruise: {cruise} · Descent: {self.descent_input.text}° · Approach spread: {self.spread_input.text}°\n'
             f'Separation: {self.config.separation:g} m · Target radius: {self.config.target_radius:g} m')
+        from .production import production_error
+        archived = production_error(self.config) is not None
+        self.start_button.set_active(not archived)
         generator = 'Physical' if self.config.generator_mode != 'geometric' else 'Geometric'
         backend = 'C++' if self.config.numerical_backend == 'cpp' else 'Python'
         self.engine_info.set_text(f'{len(self.snapshots)} aircraft · {generator} planner · '
-            f'{backend} · D: drone, O: obstacle')
+            f'{backend} · ' + ('Archived settings: launch unavailable; migrate explicitly' if archived else 'D: drone, O: obstacle'))
         if self.selected < len(self.snapshots):
             snapshot = self.snapshots[self.selected]
             circle = holding_circle(snapshot.state, snapshot.speed)
@@ -291,49 +280,8 @@ class ScenarioEditor:
                 ('Cylinder: radius and half-height.' if obstacle.kind == 'cylinder'
                  else 'Box size = twice each half-dimension.'))
 
-    def toggle_generator(self, label=None):
-        requested = 'physical_mission' if self.generator.get_status()[0] else 'geometric'
-        try:
-            if requested == 'geometric' and self.config.numerical_backend == 'cpp':
-                raise ValueError('Switch off C++ construction before selecting the geometric generator.')
-            updated = replace(self.config, generator_mode=requested)
-        except ValueError as error:
-            self.generator.eventson = False
-            if self.generator.get_status()[0] != (self.config.generator_mode != 'geometric'):
-                self.generator.set_active(0)
-            self.generator.eventson = True
-            self.status.set_text(str(error))
-            self.status.set_color('firebrick')
-            self.figure.canvas.draw_idle()
-            return
-        self.config = updated
-        self._sync_backend()
-        self.draw()
 
-    def _sync_backend(self):
-        self.backend.eventson = False
-        if self.backend.get_status()[0] != (self.config.numerical_backend == 'cpp'):
-            self.backend.set_active(0)
-        self.backend.eventson = True
-        self.backend.active = self.config.coupled_flight and self.config.generator_mode != 'geometric'
-        self.backend.labels[0].set_alpha(1. if self.backend.active else .4)
 
-    def toggle_backend(self, label=None):
-        requested = 'cpp' if self.backend.get_status()[0] else 'python'
-        try:
-            updated = replace(self.config, numerical_backend=requested)
-            if requested == 'cpp':
-                from .native_backend import require_native
-                require_native()
-        except (ValueError, RuntimeError) as error:
-            self._sync_backend()
-            self.status.set_text(str(error))
-            self.status.set_color('firebrick')
-            self.figure.canvas.draw_idle()
-            return
-        self.config = updated
-        self._sync_backend()
-        self.draw()
 
     def _build_selector(self):
         from matplotlib.widgets import RadioButtons
@@ -714,7 +662,9 @@ class ScenarioEditor:
             self._drone_labels.append((artist, caption))
         self.axis.add_patch(plt.Circle(self.target, self.config.target_radius, color="gold", alpha=0.35))
         self.axis.plot(*self.target, "kx", ms=12)
-        assignments = approach_angles(self.snapshots, replace(self.config, target=self.target))
+        from .production import production_error
+        assignments = ({s.drone_id: None for s in self.snapshots} if production_error(self.config)
+                       else approach_angles(self.snapshots, replace(self.config, target=self.target)))
         for snapshot, color in zip(self.snapshots, colors):
             angle = assignments[snapshot.drone_id]
             if angle is not None:
@@ -748,11 +698,6 @@ class ScenarioEditor:
         self.snapshots = list(self.original[0])
         self.target = self.original[1]
         self.config = self.original_config
-        self.generator.eventson = False
-        if self.generator.get_status()[0] != (self.config.generator_mode != 'geometric'):
-            self.generator.set_active(0)
-        self.generator.eventson = True
-        self._sync_backend()
         self._build_selector()
         self.selected = min(self.selected, len(self.snapshots)+len(self.config.obstacles))
         self._set_field(self.activation_input, f'{self.config.activation_time:g}')
@@ -787,15 +732,16 @@ class ScenarioEditor:
 
         if not self.apply_fields() or self.initial_conflict():
             return
-        if self.config.numerical_backend == 'cpp':
-            try:
-                from .native_backend import require_native
-                require_native()
-            except RuntimeError as error:
-                self.status.set_text(str(error))
-                self.status.set_color('firebrick')
-                self.figure.canvas.draw_idle()
-                return
+        try:
+            from .production import require_production
+            from .native_planning import require_planner
+            require_production(self.config)
+            require_planner()
+        except (ValueError, RuntimeError) as error:
+            self.status.set_text(str(error))
+            self.status.set_color('firebrick')
+            self.figure.canvas.draw_idle()
+            return
         if self.launch_validator is not None:
             try:
                 self.status.set_text('Computing and validating trajectories…')

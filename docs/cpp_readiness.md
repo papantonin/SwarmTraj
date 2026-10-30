@@ -1,5 +1,11 @@
 # CPU/memory audit and checkpoint before a C++ backend
 
+This is a historical study/guide. Its Python, geometric and planar/legacy
+execution instructions require a historical revision (available in Git at
+`300de37`). Current production uses only C++; see
+[production policy and explicit scenario migration](planner_defaults.md).
+Historical results and failed trials below are preserved as recorded.
+
 The first native component should be the complete physical rollout loop:
 seven-state dynamics, held-control RK4 and the sampled envelope checks used by
 construction. Keep the Python planner, proposal RNG/order, independent validator,

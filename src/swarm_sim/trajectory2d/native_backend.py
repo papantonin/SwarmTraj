@@ -15,7 +15,7 @@ def require_native():
     try:
         module = import_module('swarm_sim._trajectory_native')
     except ImportError as error:
-        raise RuntimeError('C++ trajectory backend is unavailable; run ./scripts/build_native.sh or install a wheel built with SWARM_BUILD_NATIVE=1') from error
+        raise RuntimeError('C++ trajectory backend is unavailable; run ./scripts/build_native.sh or install a native production wheel') from error
     if module.build_info().get('abi') != 1:
         raise RuntimeError('Unsupported C++ trajectory ABI; rebuild the extension')
     return module
@@ -28,9 +28,24 @@ def identity():
 
 def require_execution_native():
     module = require_native()
-    if module.build_info().get('execution_api') != 1:
+    if (module.build_info().get('execution_api') != 1
+            or module.build_info().get('reference_api') != 1):
         raise RuntimeError('C++ execution kernel is unavailable; rebuild with ./scripts/build_native.sh')
     return module
+
+
+def create_reference(plan, config):
+    """Copy one immutable own reference into compact native storage once."""
+    if (plan.flight_states is None or plan.flight_parameters != config.flight
+            or plan.airspeed_limit != config.limits.max_speed or plan.dt != config.dt):
+        raise ValueError('own reference differs from its physical configuration')
+    return require_execution_native().reference_new(
+        _array(plan.flight_states), _array(plan.flight_controls), parameters(config))
+
+
+def reference_window(reference, local_time, local_duration):
+    state, controls = require_execution_native().reference_window(reference, float(local_time), float(local_duration))
+    return np.frombuffer(state, dtype=np.float64), np.frombuffer(controls, dtype=np.float64)
 
 
 def require_validation_native():
@@ -166,37 +181,3 @@ def fixture(speed, config, cruise=None):
                     steps=round(config.horizon/config.dt), angle=float(-np.deg2rad(config.descent_angle_deg)),
                     target_z=float(target_z or 0), target_radius=float(config.target_radius),
                     position_error=float(config.position_error))
-
-
-def construct(snapshot, config, *, cruise, release, levels, minimum_hold, speed_reference,
-              speed_derivative, speed_end, heading, gate, direction, normal, waypoints,
-              candidate_id, diagnostics):
-    from .catalog import reject
-    from .flight3d import from_snapshot
-    from .obstacles import avoidance_waypoints
-    recipe = dict(steps=round(config.horizon/config.dt), speed=float(snapshot.speed),
-        yaw_rate=float(snapshot.state[3]), cruise=float(cruise), release=float(release),
-        minimum_hold=float(minimum_hold), speed_end=float(speed_end), heading=float(heading),
-        angle=float(-np.deg2rad(config.descent_angle_deg)),
-        target_z=float(cruise if config.target_altitude is None else config.target_altitude),
-        target_radius=float(config.target_radius), position_error=float(config.position_error),
-        latest_arrival=float(config.latest_nominal_arrival),
-        rich=int(config.cruise_levels > 1 or config.speed_profile != 'constant'),
-        levels=_array(levels), speed_reference=_array(speed_reference),
-        speed_derivative=_array(speed_derivative), gate=_array(gate), direction=_array(direction),
-        normal=_array(normal), target=_array(config.target), waypoints=_array(waypoints))
-    prefix, reason = _path(evaluate('prefix', from_snapshot(snapshot), (), config, **recipe))
-    if reason:
-        return reject(diagnostics, reason)
-    states, controls, phases, arrival = prefix
-    first = len(controls)
-    exit_waypoints = []
-    if config.obstacles:
-        exit_point = states[-1, :2] + (recipe['steps']-first)*config.dt*snapshot.speed*direction
-        exit_waypoints = avoidance_waypoints(states[-1, :2], [exit_point], config, snapshot.speed, candidate_id)
-    suffix, reason = _path(evaluate('onward', states[-1], _array(exit_waypoints).reshape(-1, 2),
-        config, **recipe, first_step=first))
-    if reason:
-        return reject(diagnostics, reason)
-    tail, commands, tail_phases, _ = suffix
-    return np.concatenate((states, tail[1:])), np.concatenate((controls, commands)), phases+tail_phases, arrival

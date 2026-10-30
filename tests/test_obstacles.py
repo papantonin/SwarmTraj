@@ -8,7 +8,7 @@ import pytest
 
 from swarm_sim.trajectory2d import Config, Obstacle, Trajectory, plan_mission, separate_loiter_snapshot
 from swarm_sim.trajectory2d.execution import simulate
-from swarm_sim.trajectory2d.obstacles import (avoidance_waypoints, execution_clearance, load_obstacles,
+from swarm_sim.trajectory2d.obstacles import (execution_clearance, load_obstacles,
     nominal_clearance_required, obstacle_preflight, plan_clearance)
 from swarm_sim.trajectory2d.planning import validate_individual
 
@@ -88,32 +88,22 @@ def test_execution_checker_does_not_validate_with_a_violated_speed_bound():
 
 
 def test_initial_obstacle_and_blocked_destination_have_specific_diagnostics():
-    snapshots = separate_loiter_snapshot(4)
+    snapshots = tuple(replace(s, altitude=80.) for s in separate_loiter_snapshot(4))
     x, y = snapshots[0].state[:2]
-    inside = Config(obstacles=(Obstacle.cylinder(x, y, 10, 0, 100),))
+    inside = Config(dimensions=3, target_altitude=80., obstacles=(Obstacle.cylinder(x, y, 10, 0, 100),))
     assert plan_mission(snapshots, inside).status == "initial_obstacle_violation"
-    margin = Config(obstacles=(Obstacle.cylinder(x + 16, y, 10, 0, 100),))
+    margin = Config(dimensions=3, target_altitude=80., obstacles=(Obstacle.cylinder(x + 16, y, 10, 0, 100),))
     assert obstacle_preflight(snapshots, margin)[0] == "initial_obstacle_margin_not_certified"
-    blocked = Config(obstacles=(Obstacle.cylinder(140, 50, 20, 0, 100),))
+    blocked = Config(dimensions=3, target_altitude=80., obstacles=(Obstacle.cylinder(140, 50, 20, 0, 100),))
     result = plan_mission(snapshots, blocked)
     assert result.status == "target_region_obstructed" and not result.plans
 
 
-def test_visibility_routing_proposes_a_deterministic_detour():
-    config = Config(obstacles=(Obstacle.cylinder(0, 0, 10, 0, 100),))
-    start, goal = np.array([-200.0, 0]), np.array([200.0, 0])
-    path = avoidance_waypoints(start, [goal], config, 12, 0)
-    assert len(path) > 1
-    np.testing.assert_array_equal(path, avoidance_waypoints(start, [goal], config, 12, 0))
-    points = np.array([start, *path])
-    for a, b in zip(points[:-1], points[1:]):
-        samples = a + np.linspace(0, 1, 101)[:, None] * (b - a)
-        assert config.obstacles[0].distance(samples).min() > config.obstacle_clearance
 
 
 @pytest.fixture(scope="module")
 def obstacle_mission():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 300), target_altitude=30, horizon=180,
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=(500, 300), target_altitude=30, horizon=180,
                     cruise_altitude_range=(40, 110), descent_angle_deg=30, max_descent_rate=10,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180, candidates=4,
                     planning_strategy="adaptive", search_order="mrv",
@@ -181,11 +171,12 @@ def test_editor_displays_obstacles_and_refuses_initial_overlap():
     import matplotlib.pyplot as plt
     from swarm_sim.trajectory2d.scenario_editor import ScenarioEditor
 
-    snapshots = separate_loiter_snapshot(4)
-    config = Config(obstacles=(Obstacle.cylinder(200, 100, 10, 0, 100),))
+    snapshots = tuple(replace(s, altitude=80.) for s in separate_loiter_snapshot(4))
+    config = Config(dimensions=3, target_altitude=80., obstacles=(Obstacle.cylinder(200, 100, 10, 0, 100),))
     editor = ScenarioEditor(snapshots, config.target, config)
     try:
-        assert any('Obstacle 0' in text.get_text() for text in editor.axis.texts)
+        editor.set_advanced(True)
+        assert any(text.get_text() == 'O0' for text in editor.axis.texts)
         editor.place((200, 100))
         editor.start()
         assert not editor.accepted

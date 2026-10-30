@@ -1,5 +1,6 @@
-"""Native proposal/catalog parity, including resumes and explicit mixed families."""
+"""Native proposal/catalog transport reproducibility, including resumes and explicit mixed families."""
 import importlib.util
+import pickle
 import numpy as np
 import pytest
 from swarm_sim.trajectory2d.catalog import Catalog, extend_catalog
@@ -39,11 +40,12 @@ def test_catalog_resume_keeps_random_stream_decisions_and_order(kind):
     if kind=='feedback':
         a.rejections=b.rejections={'validation_cruise_level_not_reached':2,'obstacle_clearance':2}
     for goal,reason in ((1,'initial'),(2,'conflict'),(4,'margin')):
-        a=extend_catalog((s,c,None,a,goal,None,None,reason),backend='python')
-        b=extend_catalog((s,c,None,b,goal,None,None,reason),backend='cpp')
+        a=extend_catalog((s,c,None,a,goal,None,None,reason))
+        b=pickle.loads(pickle.dumps(b))
+        b=extend_catalog((s,c,None,b,goal,None,None,reason))
         compare(a,b)
         for p in b.plans:
-            assert validate_individual(p,s,c,backend='python')
+            assert validate_individual(p,s,c)
 
 
 def test_guided_departure_windows_and_overridden_draws_match():
@@ -55,8 +57,9 @@ def test_guided_departure_windows_and_overridden_draws_match():
     window=DepartureWindows(3,(1,),((c.activation_time+.2,c.activation_time+.9),),2)
     a,b=Catalog(),Catalog()
     for goal in (1,2,4):
-        a=extend_catalog((s,c,None,a,goal,hint,window,'conflict'),backend='python')
-        b=extend_catalog((s,c,None,b,goal,hint,window,'conflict'),backend='cpp')
+        a=extend_catalog((s,c,None,a,goal,hint,window,'conflict'))
+        b=pickle.loads(pickle.dumps(b))
+        b=extend_catalog((s,c,None,b,goal,hint,window,'conflict'))
         compare(a,b)
 
 

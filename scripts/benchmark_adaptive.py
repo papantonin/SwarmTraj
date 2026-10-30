@@ -48,7 +48,7 @@ def main():
     if args.reference:
         previous = json.loads(args.reference.read_text())
         expected = {r["scenario"]: r["signature_sha256"] for r in previous["runs"]}
-    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
+    base = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30, max_descent_rate=10, descent_angle_deg=30,
                   cruise_altitude_range=(30, 120), planning_workers=args.workers,
                   initial_candidates=args.initial_candidates)
     snapshots = tuple(replace(s, altitude=30 + 25 * k) for k, s in enumerate(separate_loiter_snapshot(4)))

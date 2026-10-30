@@ -65,6 +65,41 @@ Control tracking_guidance(const State& s, const State& r, const State& ff,
 }
 }
 
+ReferenceWindow sample_reference(const OwnReference& reference, double time, double duration) {
+    const auto& p=reference.physics;
+    validate(p);
+    const auto& states=reference.states;
+    const auto& controls=reference.controls;
+    check_duration(duration);
+    if(!std::isfinite(time)||!std::isfinite(time+duration)||controls.empty()
+       ||states.size()!=controls.size()+1)throw std::invalid_argument("invalid own reference window");
+    const double horizon=controls.size()*p.dt;
+    State state;Control control;double tau;
+    if(time<0.) {state=states.front();control=trim(state,p);tau=time;}
+    else if(time>=horizon) {state=states.back();control=trim(state,p);tau=time-horizon;}
+    else {
+        const auto index=std::min(static_cast<std::size_t>(std::floor(time/p.dt+1e-9)),controls.size()-1);
+        state=states[index];control=controls[index];tau=time-index*p.dt;
+    }
+    ReferenceWindow result{propagate(state,control,tau,p,2),{}};
+    // Preserve both boundary trims and the original ordered held-control average.
+    double cursor=time;const double end=time+duration;
+    while(cursor<end-1e-10) {
+        double boundary;
+        if(cursor<-1e-10) {boundary=std::min(0.,end);control=trim(states.front(),p);}
+        else if(cursor>=horizon-1e-10) {boundary=end;control=trim(states.back(),p);}
+        else {
+            const auto index=std::min(static_cast<std::size_t>(std::max(0.,std::floor(cursor/p.dt+1e-9))),controls.size()-1);
+            boundary=std::min((index+1)*p.dt,end);control=controls[index];
+        }
+        if(boundary<=cursor)throw std::invalid_argument("non-progressing own reference window");
+        const double weight=std::max(0.,boundary-cursor)/duration;
+        for(std::size_t j=0;j<4;++j)result.feedforward[j]+=weight*control[j];
+        cursor=boundary;
+    }
+    return result;
+}
+
 Control clip_execution_control(const State& s, const Control& u, const Parameters& p, double dt) {
     check_duration(dt);
     Control out=u;

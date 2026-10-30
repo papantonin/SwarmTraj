@@ -5,130 +5,73 @@ local state and clock; it never receives another aircraft's telemetry.
 """
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from itertools import combinations
 
 import numpy as np
 from scipy.integrate import trapezoid
 
-from .dynamics import Limits, propagate, wrap
+from .dynamics import Limits, wrap
 from .planning import Config, Trajectory
 
 
 class Executor:
-    def __init__(self, plan: Trajectory, limits: Limits, *, execution_backend="python"):
-        if execution_backend not in ('python', 'cpp'):
-            raise ValueError('execution_backend must be python or cpp')
-        if execution_backend == 'cpp' and plan.flight_states is None:
+    def __init__(self, plan: Trajectory, limits: Limits, *, execution_backend="cpp"):
+        if execution_backend != 'cpp':
+            raise ValueError('The Python execution backend has been retired; production requires C++.')
+        if plan.flight_states is None:
             raise ValueError('cpp execution requires coupled 3D plans')
         self.execution_backend = execution_backend
         self.plan = plan
         self.limits = limits
         # The actual aircraft starts at its frozen snapshot. A clock offset
         # shifts its reference, never its physical initial position.
-        self.state = plan.sample(0).copy()
-        self.flight_state = None if plan.flight_states is None else plan.flight_states[0].copy()
-        from .tracking import WindEstimator
-        self.wind_estimator = WindEstimator()
+        from .flight3d import project
+        self.flight_state = plan.flight_states[0].copy()
+        # Display/observer projection only; controllers consume flight_state.
+        self.state = project(self.flight_state, plan.flight_controls[0], plan.flight_parameters)
+        self.wind_estimator = SimpleNamespace(previous=None, value=np.zeros(3))
         self.filter_interventions = 0
         self.filter_unresolved = 0
         self.first_unresolved_local_time = None
         self.last_flight_control = None
+        self._reference = None
+        self._reference_plan = None
+        self._reference_config = None
         self.last_local_time = None
         self.control_updates = 0
 
     def flight_command(self, local_time, local_dt, config, measured_state=None, constrained=True, control_dt=None):
         """Feedforward plus local error feedback; no fleet or ground telemetry."""
-        from .flight3d import derivative, guidance
-        reference = self.plan.sample_flight(local_time)
+        if not constrained:
+            raise ValueError('Production execution requires the constrained C++ controller')
+        from .native_backend import create_reference, reference_window
+        if self._reference is None:
+            self._reference = create_reference(self.plan, config)
+            self._reference_plan, self._reference_config = self.plan, config
+        elif self._reference_plan is not self.plan or self._reference_config is not config:
+            raise ValueError('own reference/configuration changed during execution; revalidate and create a new Executor')
+        reference, base = reference_window(self._reference, local_time, local_dt)
         self.control_updates += 1
         measured = self.flight_state if measured_state is None else measured_state
         measurement_dt = local_dt if self.last_local_time is None else local_time - self.last_local_time
-        if self.execution_backend == 'cpp' and not constrained:
-            raise ValueError('cpp execution currently requires the constrained controller')
-        wind_estimate = self.wind_estimator.update(measured, measurement_dt, config.flight,
-                                                  self.last_flight_control) if constrained and self.execution_backend == 'python' else None
         self.last_local_time = float(local_time)
         hold_dt = config.dt if control_dt is None else control_dt
-        # Average feedforward over the LOCAL interval. Taking floor(local_time)
-        # alone would turn a 1ms clock offset into a whole 200ms control delay.
-        from .flight3d import trim_control
-        base = np.zeros(4)
-        cursor, end = local_time, local_time + local_dt
-        while cursor < end - 1e-10:
-            if cursor < -1e-10:
-                boundary = min(0.0, end)
-                control = trim_control(self.plan.flight_states[0], config.flight)
-            elif cursor >= self.plan.horizon - 1e-10:
-                boundary = end
-                control = trim_control(self.plan.flight_states[-1], config.flight)
-            else:
-                index = int(np.clip(np.floor(cursor / self.plan.dt + 1e-9), 0, len(self.plan.flight_controls) - 1))
-                boundary = min((index + 1) * self.plan.dt, end)
-                control = self.plan.flight_controls[index]
-            base += max(0, boundary - cursor) / local_dt * control
-            cursor = boundary
-        if self.execution_backend == 'cpp':
-            from .native_backend import local_control_update
-            previous = self.wind_estimator.previous
-            control, estimate, intervened, feasible = local_control_update(
-                measured, reference, base, config, measurement_dt, hold_dt,
-                estimated_wind=self.wind_estimator.value,
-                previous_measured=previous if self.last_flight_control is not None else None,
-                previous_control=self.last_flight_control if previous is not None else None)
-            self.wind_estimator.previous = measured.copy()
-            self.wind_estimator.value[:] = estimate
-            self.filter_interventions += int(intervened)
-            self.filter_unresolved += int(not feasible)
-            if not feasible and self.first_unresolved_local_time is None:
-                self.first_unresolved_local_time = float(local_time)
-            self.last_flight_control = control.copy()
-            return control
-        ff = derivative(reference, base, config.flight)[[4, 5]]
-        nominal = guidance(reference, reference, ff, config, hold_dt, correct_speed=True)
-        actual = guidance(measured, reference, ff, config, hold_dt, correct_speed=True,
-                          wind_estimate=wind_estimate, preserve_air_path=constrained)
-        result = base + actual - nominal
-        if constrained:
-            from .tracking import protect_control
-            result, intervened, feasible = protect_control(measured, result, config, hold_dt)
-            self.filter_interventions += int(intervened)
-            self.filter_unresolved += int(not feasible)
-            if not feasible and self.first_unresolved_local_time is None:
-                self.first_unresolved_local_time = float(local_time)
-            self.last_flight_control = result.copy()
-            return result
-        result[0] = np.clip(result[0], 0, config.flight.max_thrust_acceleration)
-        result[1] = np.clip(result[1], 0, config.flight.max_brake_acceleration)
-        result[2] = np.clip(result[2], config.flight.min_load_factor,
-                            config.flight.load_ceiling(self.flight_state[3]))
-        result[3] = np.clip(result[3], -np.deg2rad(config.limits.max_roll_rate_deg_s),
-                            np.deg2rad(config.limits.max_roll_rate_deg_s))
-        # Roll must not step outside the bank envelope.
-        bank_limit = np.deg2rad(config.limits.max_bank_deg)
-        result[3] = np.clip(result[3], (-bank_limit - self.flight_state[6]) / config.dt,
-                            (bank_limit - self.flight_state[6]) / config.dt)
-        self.last_flight_control = result.copy()
-        return result
-
-    def command(self, local_time: float, local_dt: float, measured_state=None):
-        state = self.state if measured_state is None else measured_state
-        reference = self.plan.sample(local_time)
-        next_reference = self.plan.sample(local_time + local_dt)
-        reference_velocity = self.plan.speed * np.array([np.cos(reference[2]), np.sin(reference[2])])
-        guidance = reference_velocity + 0.8 * (reference[:2] - state[:2])
-        heading_error = wrap(np.arctan2(guidance[1], guidance[0]) - state[2])
-        desired_rate = next_reference[3] + 1.5 * heading_error
-        return self.limits.command(state, self.plan.speed, desired_rate, self.plan.dt)
-
-    def vertical_command(self, local_time, local_dt, config, measured_state=None):
-        state = self.state if measured_state is None else measured_state
-        reference = self.plan.sample(local_time)
-        following = self.plan.sample(local_time + local_dt)
-        feedforward = (following[5] - reference[5]) / config.dt
-        acceleration = feedforward + 0.8 * (reference[4] - state[4]) + 1.5 * (reference[5] - state[5])
-        low = max(-config.max_vertical_acceleration, (-config.descent_rate_limit - state[5]) / config.dt)
-        high = min(config.max_vertical_acceleration, (config.max_climb_rate - state[5]) / config.dt)
-        return float(np.clip(acceleration, low, high))
+        from .native_backend import local_control_update
+        previous = self.wind_estimator.previous
+        control, estimate, intervened, feasible = local_control_update(
+            measured, reference, base, config, measurement_dt, hold_dt,
+            estimated_wind=self.wind_estimator.value,
+            previous_measured=previous if self.last_flight_control is not None else None,
+            previous_control=self.last_flight_control if previous is not None else None)
+        self.wind_estimator.previous = measured.copy()
+        self.wind_estimator.value[:] = estimate
+        self.filter_interventions += int(intervened)
+        self.filter_unresolved += int(not feasible)
+        if not feasible and self.first_unresolved_local_time is None:
+            self.first_unresolved_local_time = float(local_time)
+        self.last_flight_control = control.copy()
+        return control
 
 
 def positions(states):
@@ -144,7 +87,8 @@ def _coupled_interval(executor, sensor, config, t, offset, rate, disturbance,
     drone's clock/state, true wind or ground-station correction is passed to
     the controller. Samples remain on the unchanged observer grid.
     """
-    from .flight3d import propagate as fly, project
+    from .flight3d import project
+    from .native_backend import propagate_samples
     states = np.empty((len(elapsed), 7))
     controls = np.empty((len(elapsed), 4))
     boundaries = []
@@ -169,11 +113,7 @@ def _coupled_interval(executor, sensor, config, t, offset, rate, disturbance,
         before = executor.flight_state.copy()
         indices = np.flatnonzero((elapsed > cursor + 1e-10) & (elapsed <= end + 1e-10))
         durations = np.r_[elapsed[indices] - cursor, duration]
-        if executor.execution_backend == 'cpp':
-            from .native_backend import propagate_samples
-            segment = propagate_samples(before, control, durations, config, disturbance=disturbance, substeps=4)
-        else:
-            segment = fly(before, control, durations, config.flight, wind=disturbance, substeps=4)
+        segment = propagate_samples(before, control, durations, config, disturbance=disturbance, substeps=4)
         states[indices], controls[indices] = segment[:-1], control
         # At an exactly sampled switch, the displayed control is outgoing.
         matching = np.flatnonzero(np.abs(elapsed - cursor) <= 1e-10)
@@ -198,20 +138,21 @@ class Evaluation:
     flight_nominal: np.ndarray | None = None
 
 
-def check_execution_backend(config, controller, backend):
-    if backend not in ('python', 'cpp'):
-        raise ValueError('execution_backend must be python or cpp')
-    if backend == 'cpp':
-        if not config.coupled_flight or controller != 'constrained':
-            raise ValueError('cpp execution currently requires coupled 3D flight and the constrained controller')
-        from .native_backend import require_execution_native
-        require_execution_native()
+def check_execution_backend(config, controller='constrained', backend='cpp'):
+    from .production import require_production
+    require_production(config)
+    if backend != 'cpp':
+        raise ValueError('The Python execution backend has been retired; production requires C++.')
+    if controller != 'constrained':
+        raise ValueError('Production C++ execution requires the constrained controller; legacy control is retired.')
+    from .native_backend import require_execution_native
+    require_execution_native()
 
 
 def simulate(plans: tuple[Trajectory, ...], config: Config, clock_offsets=None,
              clock_drifts=None, wind=0.0, observer_substeps=10, *,
              controller="constrained", wind_model="rotating", wind_heading_deg=0.,
-             position_biases=None, position_noise=0., disturbance_seed=0, execution_backend="python"):
+             position_biases=None, position_noise=0., disturbance_seed=0, execution_backend="cpp"):
     """Offline experiment with independent controllers; wind is a speed bound.
 
     Wind vectors are deterministic, held constant per nominal mission step and
@@ -233,8 +174,6 @@ def simulate(plans: tuple[Trajectory, ...], config: Config, clock_offsets=None,
         raise ValueError("invalid clocks")
     if not np.isfinite(wind) or wind < 0 or not isinstance(observer_substeps, int) or observer_substeps < 1:
         raise ValueError("invalid wind/substeps")
-    if controller not in ("constrained", "legacy"):
-        raise ValueError("controller must be constrained or legacy")
     check_execution_backend(config, controller, execution_backend)
     if wind_model not in ("rotating", "constant", "gust") or not np.isfinite(wind_heading_deg):
         raise ValueError("invalid wind model/heading")
@@ -301,27 +240,6 @@ def simulate(plans: tuple[Trajectory, ...], config: Config, clock_offsets=None,
                 vertical_min = min(vertical_min, float(segment[:, 2].min()))
                 vertical_max = max(vertical_max, float(segment[:, 2].max()))
                 continue
-            measurement_error = sensors[k].error()
-            measured = executor.state.copy()
-            measured[:2] += measurement_error[:2]
-            if config.dimensions == 3:
-                measured[4] += measurement_error[2]
-            alpha = executor.command((1 + drifts[k]) * t + offsets[k], (1 + drifts[k]) * config.dt, measured)
-            segment = propagate(executor.state, executor.plan.speed, alpha, elapsed)
-            segment[:, :2] += elapsed[:, None] * disturbance[:2]
-            if config.dimensions == 3:
-                az = executor.vertical_command((1 + drifts[k]) * t + offsets[k],
-                                                (1 + drifts[k]) * config.dt, config, measured)
-                altitude = executor.state[4] + executor.state[5] * elapsed + 0.5 * az * elapsed**2
-                vz = executor.state[5] + az * elapsed
-                segment = np.column_stack((segment, altitude, vz))
-                tau = float(np.clip(-executor.state[5] / az, 0, config.dt)) if abs(az) > 1e-12 else 0.0
-                extreme = executor.state[4] + executor.state[5] * tau + 0.5 * az * tau**2
-                vertical_min = min(vertical_min, float(altitude.min()), extreme)
-                vertical_max = max(vertical_max, float(altitude.max()), extreme)
-            first = step * observer_substeps + 1
-            actual[first:first + observer_substeps, k] = segment
-            executor.state = segment[-1].copy()
 
     # Omniscient observer starts here. Nothing below feeds the local controllers.
     nominal = np.stack([p.sample(times) for p in plans], axis=1)

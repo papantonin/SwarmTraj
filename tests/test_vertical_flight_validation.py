@@ -61,7 +61,7 @@ def test_repeat_is_exactly_reproducible_and_never_uses_planner(bench, monkeypatc
         pytest.fail('laboratory fixtures must not call planning or guidance')
     monkeypatch.setattr(public, 'plan_mission', forbidden)
     monkeypatch.setattr(planning, 'plan_mission', forbidden)
-    monkeypatch.setattr(physics, 'guidance', forbidden)
+    monkeypatch.setattr(physics, 'guidance', forbidden, raising=False)
     first, trace = bench.run_case(13., 'descent_recovery')
     second, again = bench.run_case(13., 'descent_recovery')
     assert first == second
@@ -70,7 +70,7 @@ def test_repeat_is_exactly_reproducible_and_never_uses_planner(bench, monkeypatc
 
 
 def test_tight_physical_limit_is_reported_without_clipping_forces(bench):
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', max_descent_rate=10)
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', max_descent_rate=10)
     report, _ = bench.run_case(12., 'climb_recovery', config=replace(config, max_climb_rate=.1))
     assert report['checks']['physics_consistent']
     assert not report['checks']['sampled_reference_envelope_ok']
@@ -83,7 +83,7 @@ def test_tight_physical_limit_is_reported_without_clipping_forces(bench):
 
 
 def test_invalid_samples_rejected_and_disabled_checker_cannot_pass(bench, monkeypatch):
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', max_descent_rate=10)
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', max_descent_rate=10)
     checks = bench.negative_envelope_checks(config)
     assert len(checks) == 12 and all(row['check_passed'] for row in checks)
     assert all(not row['sampled_envelope_ok'] for row in checks)

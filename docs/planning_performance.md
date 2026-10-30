@@ -1,5 +1,10 @@
 # Planning time and parallel execution
 
+The Python batching/worker measurements below are a historical study, reproducible
+with the retired implementation in Git at `300de37`. Current production and
+`benchmark_planning.py` use C++ only; see [backend policy](planner_defaults.md)
+and [native measurements](native_kernel.md).
+
 This page describes the fixed-catalog optimization and its historical benchmark.
 The CLI now defaults to adaptive catalogs and MRV search; see
 [adaptive planning and diagnostics](adaptive_planning.md). Use
@@ -31,8 +36,8 @@ runs CPU-bound loops on multiple processors without depending on the GIL.
 .venv/bin/python examples/trajectory_3d.py --generator-mode geometric --workers 1 --rollout-check-interval 1
 ```
 
-The **launcher** defaults to one worker for physical C++ planning and
-`--workers 0` (automatic) for Python. The **Python API** keeps
+The current **launcher** defaults to one native worker; `--workers 0` explicitly
+requests automatic spawn scheduling. Python production selection is retired. The **Python API** keeps
 `Config(planning_workers=1)` to avoid implicitly creating processes in a notebook
 or host application. Setting `planning_workers=0`, `2` or `4` in a script with
 an `if __name__ == "__main__":` guard enables parallel execution.

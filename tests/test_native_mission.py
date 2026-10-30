@@ -31,7 +31,7 @@ def test_complete_native_mission_has_no_python_planning_callback(monkeypatch):
     s,c=case(numerical_backend='cpp')
     monkeypatch.setattr(planning,'_plan_mission',lambda *a,**k:pytest.fail('native mission called Python planner'))
     monkeypatch.setattr(planning,'validate_individual',lambda *a,**k:pytest.fail('native mission called Python validator'))
-    monkeypatch.setattr(kernels,'construct',lambda *a,**k:pytest.fail('native mission crossed construction binding per candidate'))
+    monkeypatch.setattr(native,'propose_candidate',lambda *a,**k:pytest.fail('native mission crossed construction binding per candidate'))
     result=plan_mission((s,),c)
     assert result.validated and not result.plans[0].flight_states.flags.writeable
     assert validate_individual(result.plans[0],s,c,backend='python')

@@ -41,27 +41,20 @@ starting the isolated simulator and flying the simulated aircraft. Without
 cancels without starting Docker. `--scenario` contains its own obstacles;
 do not combine it with `--obstacles`. `--seed` overrides a saved seed only when
 explicitly supplied. A shared scenario implies the warm airborne-start mode.
-The historical benchmark without either editor/scenario option remains available.
+The unedited single-aircraft benchmark remains available with native physical reference planning.
 
-`--generator-mode physical_mission` explicitly selects direct physical reference
-construction; `--generator-mode geometric` selects the historical proposal
-builder. The editor's **Physical generator** checkbox changes the same setting.
-Both paths use the independent full-horizon physical/obstacle/joint validators.
-`--workers 1` builds catalogs serially; `--workers 2` uses spawn processes;
-`--workers 0` selects available CPUs. These overrides apply before the editor
-opens, and do not change physical limits or the native PX4 controller.
+Reference planning is fixed to the physical C++ engine. The editor has no
+generator/backend switch. `--workers 1` uses the complete serial native planner;
+`--workers 2` or `--workers 0` uses deterministic spawn scheduling around native
+catalog/search operations. These settings never change physical limits or PX4
+controllers. Missing native dependencies fail explicitly.
 
-After `./scripts/build_native.sh`, fresh coupled 3D scenes use
-`physical_mission` / `cpp` by default. Explicit `--numerical-backend python`
-selects the Python reference planner. Loaded records keep their saved choices;
-an old v1 scene requires both generator/backend overrides to select C++.
-The editor's
-**C++ construction (off: Python)** checkbox changes this same option and is
-enabled only with the physical coupled 3D generator. Select Python before
-switching back to geometric generation. Missing native extensions and invalid
-combinations are rejected; there is no automatic fallback. **Reset** restores
-both the input generator and backend. All validation requirements and native
-PX4 control remain unchanged.
+Archived v1/v2/v3 records retain their saved modes for inspection. Python,
+geometric and legacy production requests are rejected; command-line C++ aliases
+cannot silently replace an archived choice. Explicitly migrate to a new file
+with [the scenario migration tool](planner_defaults.md#archived-scenarios-and-explicit-migration).
+**Reset** restores the original recorded inputs. The benchmark without an edited
+scenario now also constructs its fresh reference with the physical C++ planner.
 
 New scenarios use `swarm-px4-editor-v3` with required
 `mission.generator_mode` and `mission.numerical_backend`. Existing v1 files mean

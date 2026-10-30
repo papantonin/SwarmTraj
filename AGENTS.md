@@ -18,36 +18,33 @@ Do not translate the interface as an incidental documentation change.
 
 ## Repository map
 
-- `src/swarm_sim/trajectory2d/`: the current 2D/3D trajectory system. The package
+- `src/swarm_sim/trajectory2d/`: the native 3D production trajectory system and archive data types. The package
   name is historical; do not rename it just because the default launcher is 3D.
   - `planning.py`: configuration, candidate catalogs, geometric approach-sector
     assignment, bounded joint search and plan serialization.
   - `dynamics.py`: planar primitives, initial snapshots and limits.
-  - `vertical.py`: legacy vertical profiles and descent geometry.
-  - `flight3d.py`: coupled coordinated point-mass dynamics and flight envelope.
+  - `vertical.py`: independent analytical descent checks and archive profile math.
+  - `flight3d.py`: independent Python equations/envelope for audits and observation;
+    production dynamics and RK4 live in `native/src/flight.cpp`.
   - `aircraft_profiles.py`: strict versioned fixed-wing JSON, immutable parameter
     binding and canonical identity. Common or complete per-ID assignments;
     v2 enclosing spheres, no physical overrides or ignored fields.
-  - `coupled_planning.py`: conversion of geometric proposals to integrated,
-    independently validated point-mass trajectories.
+  - `coupled_planning.py`: independent Python full-horizon audit replay, not a
+    proposal generator. Keep its separately implemented physical checks.
   - `execution.py`: local tracking, disturbances and global evaluation.
-  - `tracking.py`: own-motion wind estimation and sampled held-control
-    protection; failed fallback verification must invalidate execution acceptance.
+  - `tracking.py`: independent held-control audit. Native execution owns wind
+    estimation and protection; failed fallback verification invalidates acceptance.
   - `perturbations.py`: simulator-only wind/position sensors. Never feed true
     disturbance or observer state to a controller.
   - `execution_safety.py`: observer-only envelope events and shared acceptance
     criteria; preserve both sides of asynchronous actuator switches.
   - `parallel.py`: deterministic, spawn-based catalog generation.
   - `catalog.py`: resumable per-drone catalogs, rejection stages and timings.
-  - `candidate_feedback.py`: own-rejection reference adjustments; longer level
-    holds and wider routing must never change physical or validation limits.
-  - `search.py`: cached joint search, MRV ordering and expansion priorities.
+  - `search.py`: compatibility import for the sole native joint-search adapter.
   - `conflict_guidance.py`: offline sampled pair witnesses and bounded proposal
     hints; never treat a repair or individually accepted proposal as jointly safe.
-  - `obstacles.py`: static solids, full-horizon clearance bounds and proposal-only
-    XY visibility routing; `obstacle_view.py` renders solids.
-  - `routing3d.py`: deterministic obstacle-derived cruise levels and mixed
-    vertical/lateral proposals; never a substitute for integrated validation.
+  - `obstacles.py`: static solids and independent full-horizon clearance bounds;
+    routing proposals are native. `obstacle_view.py` renders solids.
   - `mission_timing.py`: arrival/recovery schedules and advisory-only horizon
     suggestions. Explicit arrival deadlines must never be silently extended.
   - `contact.py`: shared reintegrated first-entry events; unresolved bounded
@@ -56,19 +53,18 @@ Do not translate the interface as an incidental documentation change.
     simulated all-or-none activation gate; not a live distributed protocol.
   - `reservations.py`: conservative cell/time resource allocation; preserve the
     independent distance check and full-horizon reservation recheck.
-  - `interval_guidance.py`: bounded free-departure-window forecasts used before
-    proposal rollout; references are not fixed fleet commitments or safety proofs.
-  - `rich_profiles.py`: continuous multi-level and smooth-speed proposals; preserve
-    initial loiter, terminal requirements and independent actual-attainment checks.
+  - `interval_guidance.py`: immutable native departure-window forecast records;
+    references are not fleet commitments or safety proofs.
   - `profile_policy.py`: explicit mixed-family requirements; strict user requests
     must never fall back to simpler profiles, and mixed plans require a valid declaration.
-  - `passage_guidance.py`: intermediate-cell speed fitting on cached geometric
-    references; reject missed windows, deduplicate deterministic fits, and retain
-    full physical/joint validation. Reference caches stay ground-side.
-  - `scenario_editor.py`: scenario preparation interface.
+  - `native_planning.py`, `native_backend.py`: typed adapters to the required C++
+    planner/control engine; no Python numerical fallback.
+  - `production.py`: native-only production gate. Archived recorded modes remain
+    readable; unsupported requests fail without automatic conversion.
+  - `scenario_editor.py`: preparation interface without backend/generator switches.
   - `visualization.py`, `visualization3d.py`: playback and plots.
 - `examples/trajectory_3d.py`: preferred trajectory entry point; delegates to
-  `examples/trajectory_2d.py`, which also supports planar and legacy modes.
+  `examples/trajectory_2d.py`, now a compatibility alias for the same 3D path.
 - `src/swarm_sim/px4_scenario.py`: strict shared single-aircraft editor schema,
   loiter metadata, proposal-only landing-pattern screening and experiment gates.
   See `docs/gazebo_editor.md`; preserve the distinction between geometric
@@ -122,6 +118,12 @@ Do not translate the interface as an incidental documentation change.
   gym-pybullet-drones/PyBullet.
 - `src/swarm_sim/fixed_wing.py`: separate, simpler fixed-wing ring simulator;
   not the coupled trajectory-planning engine.
+- `native/src/`: the sole production proposals, catalogs, joint search, independent
+  final checks, dynamics and local execution. Preserve initial loiter, terminal
+  requirements and actual profile attainment; wider routing/longer settling
+  proposals must never change physical limits or validation margins.
+- `src/swarm_sim/scenario_migration.py`: explicit new-file shared-scenario migration
+  with source hash and changed-field provenance; never transfer old validation.
 - `tests/`: pytest tests for dynamics, planning, execution, GUI, CLI and backends.
 - `scripts/benchmark_planning.py`: reference-versus-optimized planning benchmark.
 - `scripts/benchmark_adaptive.py`: four-aircraft fixed/adaptive comparisons and
@@ -177,14 +179,14 @@ bash scripts/setup.sh
 ./scripts/test.sh
 
 # Focused checks
-./scripts/test.sh tests/test_flight3d.py tests/test_trajectory3d.py
+./scripts/test.sh tests/test_flight3d.py tests/test_cpp_production.py tests/test_native_mission.py
 ./scripts/test.sh tests/test_parallel_planning.py tests/test_trajectory_cli.py
 
 # Default coupled 3D scenario, without GUI
 .venv/bin/python examples/trajectory_3d.py --no-gui
 
-# Planar mode
-.venv/bin/python examples/trajectory_2d.py --dimensions 2 --no-gui
+# Native parallel catalogs (all numerical work remains C++)
+.venv/bin/python examples/trajectory_3d.py --workers 2 --no-gui
 
 # Ten-aircraft scenario, initial altitudes 30–120 m
 .venv/bin/python examples/trajectory_3d.py --no-gui --num-drones 10 \
@@ -265,10 +267,11 @@ catalog parallelism. Keep worker functions spawn-safe and entry points guarded
 by `if __name__ == "__main__":`. Preserve read-only plan arrays after process
 transfer and propagate worker failures rather than validating partial output.
 
-New coupled 3D missions default to physical C++ planning. Historical recorded
-selections and planar/legacy modes retain their explicit Python paths.
-The library defaults to one worker; the CLI defaults to one for C++ and
-automatic selection for Python. See `docs/planner_defaults.md`.
+C++ is the only production planning/execution backend; `Config()` defaults to
+coupled 3D physical C++. Python retains independent verification and orchestration.
+Historical planar/geometric/legacy inputs retain their recorded metadata for
+inspection, but cannot launch production. Explicit migration writes a new record.
+The library and CLI default to one worker. See `docs/planner_defaults.md`.
 Performance-only changes must retain validation points, budgets and margins.
 Use the benchmark's result signatures to compare identical scenarios, and
 report actual hardware, settings and measured timings rather than guaranteed
@@ -287,8 +290,9 @@ GUI changes additionally need an interactive smoke test when a display is
 available; report if it was not possible.
 
 Keep CLI help, exported schemas, examples and documentation consistent with
-behavior changes. Preserve historical modes and public imports unless a
-deliberate migration is part of the request. Never mask a failing regression
+behavior changes. Preserve historical data meanings and public imports unless a deliberate
+migration is part of the request. Retired planar/geometric/Python production
+requests must fail clearly; do not restore them as fallback. Never mask a failing regression
 by weakening safety assertions.
 
 Report what changed, what was actually tested, observed outcomes and remaining

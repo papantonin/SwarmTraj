@@ -6,10 +6,9 @@ import hashlib
 from time import perf_counter
 
 import numpy as np
-from scipy.optimize import linear_sum_assignment
 
 from .dynamics import Limits, Snapshot, propagate, wrap
-from .vertical import build_profile, descent_error, descent_geometry
+from .vertical import descent_error
 from .flight3d import FlightLimits
 from .obstacles import Obstacle
 
@@ -33,7 +32,7 @@ class Config:
     detour: float = 45.0
     approach_spread_deg: float = 0.0
     limits: Limits = field(default_factory=Limits)
-    dimensions: int = 2
+    dimensions: int = 3
     target_altitude: float | None = None
     min_altitude: float = 0.0
     max_altitude: float = 200.0
@@ -73,7 +72,7 @@ class Config:
     passage_guidance: str = "none"  # Offline intermediate-cell speed fitting, not departure retiming.
     candidate_guidance: str = "none"  # Own-rejection reference adjustments; never weaker validators.
     generator_mode: str | None = None  # Omitted: physical in coupled 3D, geometric in historical modes.
-    numerical_backend: str | None = None  # Omitted: C++ for physical 3D, Python otherwise; resolved below.
+    numerical_backend: str | None = None  # C++ production; explicit historical producer metadata remains readable.
     aircraft_profiles: tuple = ()  # Complete explicit (drone_id, AircraftProfile) bindings; offline only.
     aircraft_radius: float = 0.0  # Enclosing sphere; zero preserves the legacy point-aircraft model.
 
@@ -440,34 +439,9 @@ def required_distance(first, second, config):
 
 
 def approach_angles(snapshots, config):
-    """Match initial XY positions to entry sides with minimum total gate distance.
-
-    The full circle excludes its duplicate endpoint: four aircraft receive four
-    distinct directions 90 degrees apart. Zero preserves the original planner.
-    A common-radius proxy circle makes the assignment independent of arbitrary
-    drone IDs and avoids needless crossing of straight initial-to-gate links.
-    It does NOT certify the subsequently generated curved/time-dependent paths.
-    """
-    # Geometry-first ordering also makes equal-cost solutions reproducible when
-    # telemetry input is reordered or IDs change (except coincident positions).
-    ordered = sorted(snapshots, key=(lambda s: s.drone_id) if config.approach_assignment == "id"
-                     else (lambda s: (*s.state[:2], s.drone_id)))
-    if not ordered or config.approach_spread_deg == 0:
-        return {s.drone_id: None for s in ordered}
-    positions = np.array([s.state[:2] for s in ordered]) - config.target
-    offset = positions.mean(axis=0)
-    centre = float(np.arctan2(offset[1], offset[0])) if np.linalg.norm(offset) > 1e-9 else 0.0
-    spread = np.deg2rad(config.approach_spread_deg)
-    angles = (np.array([centre]) if len(ordered) == 1 else
-              centre + np.linspace(-spread / 2, spread / 2, len(ordered),
-                                   endpoint=config.approach_spread_deg < 360))
-    if config.approach_assignment == "id":
-        return {s.drone_id: float(wrap(a)) for s, a in zip(ordered, angles)}
-    radius = max(120.0, max(6 * s.speed / config.for_drone(s.drone_id).limits.max_rate(s.speed) for s in ordered))
-    gates = radius * np.column_stack((np.cos(angles), np.sin(angles)))
-    costs = np.linalg.norm(positions[:, None, :] - gates[None, :, :], axis=2)
-    rows, columns = linear_sum_assignment(costs)
-    return {ordered[row].drone_id: float(wrap(angles[column])) for row, column in zip(rows, columns)}
+    """Deterministic native sector assignment; a proposal, never a safety proof."""
+    from .native_planning import approach_angles as native_angles
+    return native_angles(snapshots, config)
 
 
 def approach_is_valid(plan, config):
@@ -488,149 +462,12 @@ def approach_is_valid(plan, config):
 
 
 def _candidate(snapshot, config, candidate_id, rng, approach_angle=None, diagnostics=None,
-               repair_hint=None, repair_mode=None, departure_override=None, cache_reference=False,
+               repair_hint=None, repair_mode=None, departure_override=None,
                level_hold_override=None, routing_extra_margin=0.):
-    from .catalog import reject
-    if ((level_hold_override is not None and (not np.isfinite(level_hold_override)
-            or level_hold_override < config.cruise_level_hold))
-            or not np.isfinite(routing_extra_margin) or routing_extra_margin < 0):
-        return reject(diagnostics, "invalid_proposal_adjustment")
-    if config.coupled_flight:
-        if config.generator_mode != "geometric":
-            from .physical_generation import physical_candidate
-            return physical_candidate(snapshot, config, candidate_id, rng, approach_angle, diagnostics,
-                                      repair_hint, repair_mode, departure_override,
-                                      level_hold_override, routing_extra_margin)
-        from .coupled_planning import convert_candidate
-        # The old generator proposes GEOMETRY, never a flyable 3D certificate.
-        # Time dilation below restores total airspeed before physical rollout.
-        template_config = replace(config, flight_model="legacy", generator_mode="geometric",
-                                  speed_profile="constant", passage_guidance="none", candidate_guidance="none",
-                                  cruise_level_hold=config.cruise_level_hold if level_hold_override is None else level_hold_override,
-                                  max_vertical_acceleration=0.9 * config.max_vertical_acceleration,
-                                  max_descent_rate=config.descent_rate_limit / np.cos(np.deg2rad(config.descent_angle_deg)))
-        proposal = _candidate(snapshot, template_config, candidate_id, rng, approach_angle, diagnostics,
-                              repair_hint, repair_mode, departure_override, routing_extra_margin=routing_extra_margin)
-        if (cache_reference or config.passage_guidance != "none") and diagnostics is not None and proposal is not None:
-            diagnostics["_geometric_reference"] = proposal
-        return None if proposal is None else convert_candidate(proposal, snapshot, config, diagnostics)
-    steps = round(config.horizon / config.dt)
-    state = np.asarray(snapshot.state, dtype=float).copy()
-    speed = snapshot.speed
-    release = config.activation_time + rng.uniform(config.min_extra_loiter, config.max_extra_loiter)
-    if repair_hint is not None and repair_mode == "departure":
-        release = repair_hint.release_time(config)
-    if departure_override is not None:
-        if not config.activation_time + config.min_extra_loiter <= departure_override <= config.activation_time + config.max_extra_loiter:
-            return reject(diagnostics, "interval_departure_out_of_bounds")
-        release = float(departure_override)
-    target = np.asarray(config.target)
-    predicted = propagate(state, speed, 0.0, release)
-    # Common XYZ arrivals need varied flight durations even with identical
-    # departure times. Stratify approach lengths, keeping the assigned entry side.
-    route_angle = approach_angle
-    if route_angle is None and config.target_altitude is not None:
-        offset = predicted[:2] - target
-        route_angle = float(np.arctan2(offset[1], offset[0]))
-    if route_angle is not None:
-        direction = np.array([np.cos(route_angle), np.sin(route_angle)])
-        approach_radius = max(120.0, 6 * speed / config.limits.max_rate(speed))
-        if config.target_altitude is not None:
-            approach_radius *= 1 + 1.5 * (candidate_id % 7) / 6
-        entry = target + approach_radius * direction
-    else:
-        entry = target
-    difference = entry - predicted[:2]
-    length = np.linalg.norm(difference)
-    normal = np.array([-difference[1], difference[0]]) / max(length, 1e-9)
-    fractions = np.array([0.30, 0.65])
-    detour = config.detour * (1 + 0.5 * ((candidate_id // 7) % 3)
-                              if config.target_altitude is not None else 1)
-    waypoints = [predicted[:2] + f * difference + normal * rng.uniform(-detour, detour)
-                 for f in fractions]
-    if repair_hint is not None and repair_mode == "lateral":
-        repair_hint.lateral_waypoints(predicted[:2], difference, normal, waypoints, detour)
-    if route_angle is not None:
-        waypoints.extend([entry, target + 0.5 * approach_radius * direction])
-    waypoints.append(target)
-    routing_mode, forced_cruise = "lateral", None
-    exit_waypoints = None
-    if config.obstacles:
-        # Extra padding is a routing preference only. All physical clearance
-        # requirements are independently checked with the original config.
-        routing_config = (config if routing_extra_margin == 0 else
-                          replace(config, obstacle_clearance=config.obstacle_clearance + routing_extra_margin))
-        from .obstacles import avoidance_waypoints
-        from .routing3d import spatial_cruise_proposal, spatial_waypoints
-        routing_mode, forced_cruise = spatial_cruise_proposal(
-            snapshot, routing_config, speed, candidate_id, predicted[:2], waypoints)
-        outbound = target - waypoints[-2]
-        outbound /= max(float(np.linalg.norm(outbound)), 1e-9)
-        exit_waypoints = avoidance_waypoints(target, [target + outbound * speed * config.horizon],
-                                              routing_config, speed, candidate_id)
-        waypoints = (spatial_waypoints(predicted[:2], waypoints, routing_config, speed, candidate_id, forced_cruise)
-                     if forced_cruise is not None else
-                     avoidance_waypoints(predicted[:2], waypoints, routing_config, speed, candidate_id, optional_count=2))
-    waypoint = 0
-    states = np.empty((steps + 1, 4))
-    commands = np.zeros(steps)
-    states[0] = state
-    arrival = None
-    # Keep a full target tolerance available for the execution's spatial error.
-    capture = config.target_radius - config.position_error
-    for step in range(steps):
-        t = step * config.dt
-        if t < release:
-            desired_rate = snapshot.state[3]  # Original holding orbit until release.
-        elif arrival is not None and not config.obstacles:
-            desired_rate = 0.0  # Continue flying; do not vanish at the target.
-        else:
-            capture_waypoint = 8.0 if config.obstacles else 24.0
-            if waypoint < len(waypoints) - 1 and np.linalg.norm(state[:2] - waypoints[waypoint]) < capture_waypoint:
-                waypoint += 1
-            delta = waypoints[waypoint] - state[:2]
-            desired_rate = 1.2 * float(wrap(np.arctan2(delta[1], delta[0]) - state[2]))
-        alpha = config.limits.command(state, speed, desired_rate, config.dt)
-        state = propagate(state, speed, alpha, config.dt)
-        states[step + 1], commands[step] = state, alpha
-        if t >= release and arrival is None and np.linalg.norm(state[:2] - target) <= capture:
-            arrival = (step + 1) * config.dt
-            if exit_waypoints is not None:
-                waypoints, waypoint = exit_waypoints, 0
-    if arrival is None:
-        return reject(diagnostics, "geometry_arrival_or_horizon", "target_not_reached_within_horizon")
-    if arrival > config.latest_nominal_arrival + 1e-9:
-        deadline_exceeded = config.arrival_deadline is not None and arrival + config.clock_error > config.arrival_deadline + 1e-9
-        if diagnostics is not None and not deadline_exceeded:
-            diagnostics["required_horizon_s"] = arrival + config.post_arrival_time + config.clock_error
-        return reject(diagnostics, "geometry_arrival_or_horizon",
-                      "arrival_deadline_exceeded" if deadline_exceeded else "post_arrival_window_exceeds_horizon")
-    vertical = (None, None)
-    cruise = None
-    profile_info = {}
-    if config.dimensions == 3:
-        cruise = snapshot.altitude if snapshot.cruise_altitude is None else snapshot.cruise_altitude
-        if config.cruise_altitude_range is not None:
-            low, high = config.cruise_altitude_range
-            if config.descent_angle_deg > 0:
-                low = max(low, config.target_altitude + descent_geometry(speed, config)[3])
-                if low > high:
-                    return reject(diagnostics, "cruise_range_for_descent")
-            # Alternate batches of low-manoeuvre proposals and alternate levels.
-            # Each batch spans all seven approach-length families.
-            cruise = float(np.clip(snapshot.altitude, low, high) if candidate_id % 14 < 7
-                           else rng.uniform(low, high))
-            if repair_hint is not None and repair_mode == "altitude":
-                cruise = repair_hint.cruise_level(low, high)
-        if forced_cruise is not None:
-            cruise = forced_cruise
-        vertical = build_profile(replace(snapshot, cruise_altitude=cruise), config, release, arrival, rng, diagnostics,
-                                 profile_info=profile_info)
-        if vertical is None:
-            return reject(diagnostics, "vertical_profile")
-    return Trajectory(snapshot.drone_id, candidate_id, speed, config.dt,
-                      states, commands, arrival, release, approach_angle, *vertical, cruise,
-                      routing_mode=routing_mode, cruise_levels_m=profile_info.get("levels", ()))
+    """Compatibility adapter to the native proposal API; validate before selection."""
+    from .native_planning import propose_candidate
+    return propose_candidate(snapshot, config, candidate_id, rng, approach_angle, diagnostics,
+        repair_hint, repair_mode, departure_override, level_hold_override, routing_extra_margin)
 
 
 def _validate_individual(plan, snapshot, config, diagnostics=None, *, backend='python'):
@@ -728,8 +565,8 @@ def _validate_individual(plan, snapshot, config, diagnostics=None, *, backend='p
 
 
 def validate_individual(plan, snapshot, config, diagnostics=None, *, backend=None):
-    """Validate independently; backend='python' retains the differential oracle."""
-    backend = config.numerical_backend if backend is None else backend
+    """Independent audit replay; Python here is a validator, never a planner."""
+    backend = 'python' if backend is None else backend
     if backend not in ('python', 'cpp'):
         raise ValueError('validation backend must be python or cpp')
     if backend == 'cpp' and not config.coupled_flight:
@@ -780,7 +617,9 @@ def _generate_catalog(task):
 
 
 def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
-    """Use one frozen snapshot only; no telemetry callback/network access."""
+    """Spawn orchestration only; proposals, catalogs and search execute in C++."""
+    from .production import require_production
+    require_production(config)
     if not snapshots:
         raise ValueError("at least one snapshot is required")
     if len({s.drone_id for s in snapshots}) != len(snapshots):
@@ -844,15 +683,9 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
 
     from .catalog import Catalog, extend_catalog
     from .parallel import generate_catalogs
-    from .search import JointSearch
-    if config.numerical_backend == 'cpp':
-        from .native_planning import NativeJointSearch as JointSearch
+    from .native_planning import NativeJointSearch as JointSearch
 
-    if config.numerical_backend == 'cpp':
-        from .native_planning import approach_angles as native_approach_angles
-        assignments = native_approach_angles(snapshots, config)
-    else:
-        assignments = approach_angles(snapshots, config)
+    assignments = approach_angles(snapshots, config)
     catalogs = [Catalog() for _ in snapshots]
     search = JointSearch(config)
     rounds = []
@@ -972,61 +805,33 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
                       counts=counts, search_nodes=search.nodes, diagnostics=diagnostic, timings=timings)
     # Re-evaluate the chosen pairs, independently of the cached search decisions.
     start = perf_counter()
-    if config.numerical_backend == 'cpp':
-        verified = search.verify_joint(plans)
-        if 'reservations' in verified:
-            diagnostic['reservations'] = verified['reservations']
-        diagnostic['obstacle_checks'] = verified['obstacle_checks']
-        timings['joint_verification_wall_s'] = perf_counter() - start
-        return Result('validated',
-            'Numerically validated coupled point-mass flight on [0, horizon]; separation bound is conditional on integration accuracy and tracking tubes.',
-            plans, verified['minimum_distance_lower_bound'], verified['required_distance'],
-            counts, search.nodes, diagnostic, timings)
-    checks = [(continuous_distance_lower_bound(a, b), required_distance(a, b, config))
-              for a, b in combinations(plans, 2)]
-    if any(lower < required for lower, required in checks):
-        raise RuntimeError("joint verification failed")
-    if config.reservation_policy == "grid":
-        from .reservations import occupancy, first_conflict
-        allocated = [occupancy(p, config) for p in plans]
-        if any(first_conflict(a, b) is not None for a, b in combinations(allocated, 2)):
-            raise RuntimeError("independent reservation verification failed")
-        diagnostic["reservations"] = {"policy": "grid", "cell_size_m": config.reservation_cell_size,
-            "full_horizon_verified": True,
-            "allocated": [{"drone_id": a.drone_id, "candidate_id": a.candidate_id,
-                           "cells": len(a.cells), "intervals": sum(map(len, a.cells.values())),
-                           "inflation_m": a.inflation_m} for a in allocated]}
-    from .obstacles import plan_clearance, nominal_clearance_required
-    obstacle_checks = [{"drone_id": p.drone_id, "lower_bound_m": plan_clearance(p, config),
-                        "required_m": nominal_clearance_required(p.speed_bound, config.for_drone(p.drone_id))} for p in plans] if config.obstacles else []
-    if any(c["lower_bound_m"] < c["required_m"] for c in obstacle_checks):
-        raise RuntimeError("independent obstacle verification failed")
-    diagnostic["obstacle_checks"] = obstacle_checks
-    timings["joint_verification_wall_s"] = perf_counter() - start
-    reason = ("Numerically validated coupled point-mass flight on [0, horizon]; separation bound is conditional on integration accuracy and tracking tubes."
-              if config.coupled_flight else f"Conditional certificate on [0, horizon] in the {config.dimensions}D kinematic model.")
-    return Result("validated", reason,
-                  plans, min((c[0] for c in checks), default=None),
-                  max((c[1] for c in checks), default=None), counts, search.nodes, diagnostic, timings)
+    verified = search.verify_joint(plans)
+    if 'reservations' in verified:
+        diagnostic['reservations'] = verified['reservations']
+    diagnostic['obstacle_checks'] = verified['obstacle_checks']
+    timings['joint_verification_wall_s'] = perf_counter() - start
+    return Result('validated',
+        'Numerically validated coupled point-mass flight on [0, horizon]; separation bound is conditional on integration accuracy and tracking tubes.',
+        plans, verified['minimum_distance_lower_bound'], verified['required_distance'],
+        counts, search.nodes, diagnostic, timings)
 
 
-def plan_mission(snapshots: tuple[Snapshot, ...], config: Config = Config()):
-    """Plan from a frozen snapshot; timing is excluded from reproducible payloads."""
-    if config.numerical_backend == 'cpp':
-        from .native_planning import require_planner
-        require_planner()  # Explicit selection must fail before starting catalogs.
-    start = perf_counter()
+def plan_mission(snapshots: tuple[Snapshot, ...], config: Config = Config(dimensions=3)):
+    """Native-only production planning from a frozen snapshot; no Python fallback."""
+    from .production import require_production
+    from .native_planning import require_planner, plan_mission as native_plan
+    from .parallel import worker_count
     from .reservations import ReservationBudgetError
+    require_production(config)
+    require_planner()
+    start = perf_counter()
     try:
-        from .parallel import worker_count
-        if config.numerical_backend == 'cpp' and worker_count(config.planning_workers, len(snapshots)) == 1:
-            from .native_planning import plan_mission as native_plan
-            result = native_plan(snapshots, config)
-        else:
-            result = _plan_mission(snapshots, config)
+        result = (native_plan(snapshots, config)
+                  if worker_count(config.planning_workers, len(snapshots)) == 1
+                  else _plan_mission(snapshots, config))
     except ReservationBudgetError as error:
-        result = Result("reservation_budget_exhausted", str(error))
-    return replace(result, timings={**result.timings, "total_wall_s": perf_counter() - start})
+        result = Result('reservation_budget_exhausted', str(error))
+    return replace(result, timings={**result.timings, 'total_wall_s': perf_counter() - start})
 
 
 def mission_document(result, config, snapshots, *, aircraft_profile=None):

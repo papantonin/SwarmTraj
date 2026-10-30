@@ -120,7 +120,7 @@ For contributor checks:
 
 ```bash
 # Core tests usable with the trajectory installation
-./scripts/test.sh tests/test_flight3d.py tests/test_trajectory3d.py
+./scripts/test.sh tests/test_flight3d.py tests/test_physical_generation.py tests/test_cpp_production.py
 # Entire suite requires the full Python installation, but no live PX4 flight
 ./scripts/test.sh
 ```

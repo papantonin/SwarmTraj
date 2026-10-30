@@ -8,11 +8,13 @@
 #include <exception>
 #include <limits>
 #include <cmath>
+#include <memory>
 #include "build_info.hpp"
 using namespace swarmtraj;
 PyObject* swarm_validate_candidate(PyObject*,PyObject*);
 PyObject* swarm_rng_probe(PyObject*,PyObject*);
 PyObject* swarm_extend_catalog(PyObject*,PyObject*);
+PyObject* swarm_physical_proposal(PyObject*,PyObject*);
 PyObject* swarm_search_new(PyObject*,PyObject*);
 PyObject* swarm_search_call(PyObject*,PyObject*);
 PyObject* swarm_plan_mission(PyObject*,PyObject*);
@@ -178,6 +180,44 @@ PyObject* evaluate(PyObject*,PyObject* args) {
     }catch(const std::bad_alloc&){PyErr_NoMemory();return nullptr;}
     catch(const std::exception& e){PyErr_Clear();PyErr_SetString(PyExc_ValueError,e.what());return nullptr;}
 }
+constexpr const char* reference_capsule_name="swarmtraj.own_reference.v1";
+void destroy_reference(PyObject* capsule) {
+    auto* value=static_cast<OwnReference*>(PyCapsule_GetPointer(capsule,reference_capsule_name));
+    if(value)delete value;else PyErr_Clear();
+}
+PyObject* create_reference(PyObject*,PyObject* args) {
+    PyObject *states,*controls,*physics;
+    if(!PyArg_ParseTuple(args,"OOO",&states,&controls,&physics))return nullptr;
+    try {
+        auto reference=std::make_unique<OwnReference>(OwnReference{matrix<7>(states),matrix<4>(controls),parameters(physics)});
+        if(reference->controls.empty()||reference->states.size()!=reference->controls.size()+1)
+            throw std::invalid_argument("own reference history mismatch");
+        for(const auto& state:reference->states)if(state[3]<=0.)
+            throw std::invalid_argument("own reference airspeed must be positive");
+        auto* capsule=PyCapsule_New(reference.get(),reference_capsule_name,destroy_reference);
+        if(capsule)reference.release();
+        return capsule;
+    }catch(const std::bad_alloc&){PyErr_NoMemory();return nullptr;}
+     catch(const std::exception& e){PyErr_Clear();PyErr_SetString(PyExc_ValueError,e.what());return nullptr;}
+}
+PyObject* reference_window(PyObject*,PyObject* args) {
+    PyObject* capsule;double time,duration;
+    if(!PyArg_ParseTuple(args,"Odd",&capsule,&time,&duration))return nullptr;
+    auto* reference=static_cast<const OwnReference*>(PyCapsule_GetPointer(capsule,reference_capsule_name));
+    if(!reference)return nullptr;
+    ReferenceWindow result;std::exception_ptr error;
+    Py_BEGIN_ALLOW_THREADS
+    try{result=sample_reference(*reference,time,duration);}catch(...){error=std::current_exception();}
+    Py_END_ALLOW_THREADS
+    try {
+        if(error)std::rethrow_exception(error);
+        return Py_BuildValue("(NN)",
+            PyBytes_FromStringAndSize(reinterpret_cast<const char*>(result.state.data()),sizeof(State)),
+            PyBytes_FromStringAndSize(reinterpret_cast<const char*>(result.feedforward.data()),sizeof(Control)));
+    }catch(const std::bad_alloc&){PyErr_NoMemory();return nullptr;}
+     catch(const std::exception& e){PyErr_Clear();PyErr_SetString(PyExc_ValueError,e.what());return nullptr;}
+}
+
 #ifdef _MSC_VER
 #define SWARM_STRINGIFY_IMPL(x) #x
 #define SWARM_STRINGIFY(x) SWARM_STRINGIFY_IMPL(x)
@@ -185,9 +225,9 @@ PyObject* evaluate(PyObject*,PyObject* args) {
 #else
 #define SWARM_COMPILER __VERSION__
 #endif
-PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:i,s:i,s:i,s:i,s:i,s:s,s:s,s:s}","abi",1,"execution_api",1,"validation_api",1,"catalog_api",1,"search_api",1,"planning_api",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
-PyMethodDef methods[]={{"evaluate",evaluate,METH_VARARGS,"Checked native numerical dispatch; float64 contiguous buffers."},{"validate_candidate",swarm_validate_candidate,METH_VARARGS,"Independent full-horizon coupled candidate validation."},{"extend_catalog",swarm_extend_catalog,METH_VARARGS,"Deterministic native physical proposals and catalog extension."},{"search_new",swarm_search_new,METH_VARARGS,"Create native bounded joint-search state."},{"search_call",swarm_search_call,METH_VARARGS,"Operate native bounded joint search."},{"plan_mission",swarm_plan_mission,METH_VARARGS,"Complete standalone native physical mission planning."},{"approach_angles",swarm_approach_angles,METH_VARARGS,"Native deterministic approach-sector assignment."},{"_rng_probe",swarm_rng_probe,METH_VARARGS,"Deterministic PCG64 compatibility probe."},{"build_info",info,METH_NOARGS,"Native build identity."},{nullptr,nullptr,0,nullptr}};
-PyModuleDef module={PyModuleDef_HEAD_INIT,"_trajectory_native","Optional coordinated point-mass numerical core.",-1,methods};
+PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:i,s:i,s:i,s:i,s:i,s:i,s:i,s:s,s:s,s:s}","abi",1,"execution_api",1,"validation_api",1,"catalog_api",1,"search_api",1,"planning_api",1,"proposal_api",1,"reference_api",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
+PyMethodDef methods[]={{"reference_new",create_reference,METH_VARARGS,"Copy an immutable own plan once for native reference sampling."},{"reference_window",reference_window,METH_VARARGS,"Sample own state and held-control feedforward in C++."},{"evaluate",evaluate,METH_VARARGS,"Checked native numerical dispatch; float64 contiguous buffers."},{"validate_candidate",swarm_validate_candidate,METH_VARARGS,"Independent full-horizon coupled candidate validation."},{"physical_proposal",swarm_physical_proposal,METH_VARARGS,"Single native proposal with deterministic PCG64 state."},{"extend_catalog",swarm_extend_catalog,METH_VARARGS,"Deterministic native physical proposals and catalog extension."},{"search_new",swarm_search_new,METH_VARARGS,"Create native bounded joint-search state."},{"search_call",swarm_search_call,METH_VARARGS,"Operate native bounded joint search."},{"plan_mission",swarm_plan_mission,METH_VARARGS,"Complete standalone native physical mission planning."},{"approach_angles",swarm_approach_angles,METH_VARARGS,"Native deterministic approach-sector assignment."},{"_rng_probe",swarm_rng_probe,METH_VARARGS,"Deterministic PCG64 compatibility probe."},{"build_info",info,METH_NOARGS,"Native build identity."},{nullptr,nullptr,0,nullptr}};
+PyModuleDef module={PyModuleDef_HEAD_INIT,"_trajectory_native","Required coordinated point-mass production core.",-1,methods};
 }
 PyMODINIT_FUNC PyInit__trajectory_native(){
     auto* result=PyModule_Create(&module);if(!result)return nullptr;

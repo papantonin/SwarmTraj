@@ -1,4 +1,4 @@
-"""Replay immutable saved plans through Python/C++ local execution and Python observers.
+"""Measure immutable saved plans through native execution and independent Python observation.
 
 Fresh, serialized processes measure full simulate(), including unchanged global
 evaluation. This is offline point-mass execution, not PX4/Gazebo flight latency.
@@ -90,6 +90,8 @@ def worker(output, index):
     document, config, plans = load_document(trial['mission'])
     options = settings(trial['profile'], plans)
     start, cpu = perf_counter(), process_time()
+    if trial['backend'] != 'cpp':
+        raise ValueError('Python execution workers are retired; stored paired data is analysis-only.')
     evaluation = simulate(plans, config, execution_backend=trial['backend'], **options)
     wall_s, cpu_s = perf_counter() - start, process_time() - cpu
     if [p.to_dict() for p in plans] != document['plans']:
@@ -147,6 +149,18 @@ def compare_array(a, b, name, single_aircraft):
 
 def summarize(output, manifest, rows, *, filename='summary.json'):
     errors, pairs = [], []
+    if all(trial['backend'] == 'cpp' for trial in manifest['trials']):
+        for i, (trial, row) in enumerate(zip(manifest['trials'], rows)):
+            if row.get('completion') != 'complete':
+                errors.append(f'{i}: incomplete native measurement')
+                continue
+            for key, expected in (trial.get('historical') or {}).items():
+                if row['report'].get(key) != expected:
+                    errors.append(f'{i}: changed historical expectation {key}')
+        result = dict(passed=not errors, pairs=[], errors=errors, runs=rows,
+            scope='Native-only measurements and declared expectations; not independent trajectory revalidation.')
+        (output/filename).write_text(json.dumps(result, indent=2, allow_nan=False)+'\n')
+        return result
     for i, trial in enumerate(manifest['trials']):
         if trial['backend'] != 'cpp':
             continue
@@ -274,10 +288,10 @@ def main(argv=None):
         for profile in args.profiles:
             for repeat in range(args.repeats):
                 # Alternate order to limit systematic warmup/desktop-load bias.
-                for backend in (('python', 'cpp') if repeat % 2 == 0 else ('cpp', 'python')):
+                for backend in ('cpp',):
                     trials.append(dict(id=m['id'], mission=m['path'], profile=profile,
                         repeat=repeat, backend=backend, historical=m['historical'].get(profile)))
-    manifest = dict(schema='swarm-native-execution-v1', sources=sources(), native=identity(),
+    manifest = dict(schema='swarm-native-execution-v2', sources=sources(), native=identity(),
         missions=missions, trials=trials, python=platform.python_version(), numpy=np.__version__,
         cpu_info=subprocess.check_output(['lscpu'], text=True), timeout_s=args.timeout,
         scope='Full offline simulate() with own-state local control and unchanged Python observer; '

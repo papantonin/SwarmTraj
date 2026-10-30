@@ -32,7 +32,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.output.exists():
         parser.error('output must be a new directory')
-    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30., descent_angle_deg=30.,
+    base = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30., descent_angle_deg=30.,
                   max_descent_rate=8., horizon=args.horizon, candidates=1, attempts=args.attempts,
                   cruise_altitude_range=(30., 120.), max_extra_loiter=0.)
     jobs = []
@@ -40,7 +40,7 @@ def main(argv=None):
         for altitude in (30., 80.):
             for speed in args.speeds:
                 snapshot = replace(separate_loiter_snapshot(1)[0], altitude=altitude).with_speed(speed, base.limits)
-                for mode in ('geometric', 'physical_mission'):
+                for mode in ('physical_mission',):
                     config = replace(base, target=target, generator_mode=mode)
                     identifier = f'{target_name}-z{altitude:g}-v{speed:g}-{mode}'
                     jobs.append((identifier, snapshot, config))
@@ -50,7 +50,7 @@ def main(argv=None):
     hashes = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
     manifest = {'created_utc': datetime.now(timezone.utc).isoformat(), 'python': platform.python_version(),
         'platform': platform.platform(), 'source_sha256': hashes,
-        'scope': 'paired bounded single-aircraft construction; no continuous-space infeasibility or PX4 claim',
+        'scope': 'native bounded single-aircraft construction; no continuous-space infeasibility or PX4 claim',
         'timing_scope': 'planning only; host load is not isolated',
         'jobs': [{'id': name, 'snapshot': asdict(s), 'config': asdict(c)} for name, s, c in jobs]}
     (args.output / 'manifest.json').write_text(json.dumps(manifest, indent=2, allow_nan=False))
@@ -84,7 +84,7 @@ def main(argv=None):
         if any(hashlib.sha256((root / p).read_bytes()).hexdigest() != h for p, h in hashes.items()):
             raise RuntimeError('sources changed during bench')
     summary = {'jobs': len(records), 'validated': {mode: sum(r['mode'] == mode and r['status'] == 'validated'
-        for r in records) for mode in ('geometric', 'physical_mission')},
+        for r in records) for mode in ('physical_mission',)},
         'execution_failures': [{'id': r['id'], 'profile': e['profile'], 'failures': e['report']['execution_failures']}
             for r in records for e in r['executions'] if not e['report']['execution_validated']]}
     (args.output / 'summary.json').write_text(json.dumps(summary, indent=2, allow_nan=False))

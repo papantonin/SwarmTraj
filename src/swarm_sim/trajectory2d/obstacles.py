@@ -6,7 +6,6 @@ The XY visibility graph is a heuristic, never the safety validator.
 """
 
 from dataclasses import dataclass
-import heapq
 import json
 
 import numpy as np
@@ -125,69 +124,3 @@ def execution_clearance(actual_positions, plans, config, sample_dt, wind, speed_
             "minimum_obstacle_surface_clearance_lower_bound_m": surface_lower,
             "obstacle_clearance_verified_in_execution_model": bool(surface_lower is not None and surface_lower >= config.obstacle_clearance),
             "sampled_obstacle_collision": bool(sampled_surface < 0)}
-
-
-def _segment_hits_rectangle(a, b, low, high):
-    # Open interior: traveling along an expanded boundary is allowed for this
-    # geometric proposal. Integrated flight is checked with independent margins.
-    low, high = low + 1e-7, high - 1e-7
-    enter, leave = 0.0, 1.0
-    for k in range(2):
-        delta = b[k] - a[k]
-        if abs(delta) < 1e-12:
-            if not low[k] < a[k] < high[k]:
-                return False
-        else:
-            first, last = sorted(((low[k] - a[k]) / delta, (high[k] - a[k]) / delta))
-            enter, leave = max(enter, first), min(leave, last)
-    return enter < leave and leave > 0 and enter < 1
-
-
-def _visibility_path(start, goal, rectangles, reverse):
-    if not any(_segment_hits_rectangle(start, goal, low, high) for low, high in rectangles):
-        return [goal]
-    corners = [np.array([x, y]) for low, high in rectangles
-               for x, y in ((low[0], low[1]), (low[0], high[1]), (high[0], high[1]), (high[0], low[1]))]
-    nodes = [start, goal] + (corners[::-1] if reverse else corners)
-    costs, parents, queue = {0: 0.0}, {}, [(0.0, 0)]
-    while queue:
-        cost, i = heapq.heappop(queue)
-        if cost > costs[i]:
-            continue
-        if i == 1:
-            path = []
-            while i:
-                path.append(nodes[i])
-                i = parents[i]
-            return path[::-1]
-        for j, point in enumerate(nodes):
-            if i == j or any(_segment_hits_rectangle(nodes[i], point, low, high) for low, high in rectangles):
-                continue
-            value = cost + float(np.linalg.norm(point - nodes[i]))
-            if value < costs.get(j, np.inf) - 1e-9:
-                costs[j], parents[j] = value, i
-                heapq.heappush(queue, (value, j))
-    return None
-
-
-def avoidance_waypoints(start, waypoints, config, speed, candidate_id, optional_count=0):
-    if not config.obstacles:
-        return waypoints
-    radius = speed / config.limits.max_rate(speed)
-    padding = nominal_clearance_required(config.limits.max_speed, config) + 2 * radius + 8
-    # Bounding rectangles conservatively enclose cylinders too. Lateral routing
-    # deliberately ignores altitude; final 3D checks may accept an overflight.
-    rectangles = [(np.array(o.center[:2]) - o.half_extents[:2] - padding,
-                   np.array(o.center[:2]) + o.half_extents[:2] + padding) for o in config.obstacles]
-    routed, previous = [], np.asarray(start, dtype=float)
-    for index, point in enumerate(waypoints):
-        point = np.asarray(point, dtype=float)
-        inside = any(np.all(point > low) and np.all(point < high) for low, high in rectangles)
-        if index < optional_count and inside:
-            continue
-        path = _visibility_path(previous, point, rectangles, candidate_id % 2)
-        # Being above/below a solid can make an XY-blocked endpoint feasible.
-        # This fallback is only a proposal, never an obstacle-clearance approval.
-        routed.extend(path if path is not None else [point])
-        previous = point
-    return routed

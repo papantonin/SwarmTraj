@@ -18,8 +18,7 @@ from swarm_sim.trajectory2d.obstacles import load_obstacles
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--modes', nargs='+', choices=('baseline', 'windows', 'profiles', 'combined', 'mixed', 'mixed_windows',
-                                                    'passages', 'mixed_passages'),
+    parser.add_argument('--modes', nargs='+', choices=('baseline', 'windows', 'profiles', 'combined', 'mixed', 'mixed_windows'),
                         default=['baseline', 'windows', 'profiles', 'combined'])
     parser.add_argument('--seeds', type=int, nargs='+', default=[7])
     parser.add_argument('--workers', type=int, default=4)
@@ -42,7 +41,7 @@ def main():
         'intervals-profiles-' + datetime.now().strftime('%Y%m%d-%H%M%S-%f') + '.json')
     if output.exists():
         parser.error('output must be a new file')
-    base = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=tuple(args.target), target_altitude=30, horizon=args.horizon,
+    base = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=tuple(args.target), target_altitude=30, horizon=args.horizon,
                   activation_time=args.activation_time, descent_angle_deg=30, max_descent_rate=10,
                   cruise_altitude_range=tuple(args.cruise_range), planning_strategy='adaptive', search_order='mrv',
                   initial_candidates=args.initial_candidates, selection_policy='max_margin', conflict_guidance='witness',
@@ -61,7 +60,7 @@ def main():
                 config = replace(base, seed=seed,
                     profile_policy='adaptive_mixed' if mode in ('mixed', 'mixed_windows', 'mixed_passages') else 'strict',
                     interval_guidance='safe_windows' if mode in ('windows', 'combined', 'mixed_windows', 'passages', 'mixed_passages') else 'none',
-                    passage_guidance='safe_windows' if mode in ('passages', 'mixed_passages') else 'none',
+                    passage_guidance='none',
                     cruise_levels=args.cruise_levels if rich else 1, speed_profile='smooth' if rich else 'constant',
                     speed_profile_range=(10, 14) if rich else None)
                 print(f'START seed={seed} mode={mode} repeat={repeat+1}', flush=True)

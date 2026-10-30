@@ -1,4 +1,4 @@
-"""Coordinated, independently executed planar and coupled 3D flight experiments."""
+"""Native coordinated 3D flight planning, independent execution and archive inspection."""
 
 from .dynamics import Limits, Snapshot, ring_snapshot, separate_loiter_snapshot
 from .planning import Config, Result, Trajectory, plan_mission

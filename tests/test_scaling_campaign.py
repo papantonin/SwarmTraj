@@ -185,7 +185,8 @@ def test_explicit_process_override_preserves_replay_pairs_and_safety(campaign):
     assert reporter.input_differences(jobs[0], original[0])
     assert not reporter.input_differences(jobs[0], original[0], 2)
     assert reporter.input_differences(jobs[0], original[0], 1)
-    assert reporter.input_differences(jobs[0], original[0], 2, 'physical_mission')
+    assert not reporter.input_differences(jobs[0], original[0], 2, 'physical_mission')
+    assert reporter.input_differences(jobs[0], original[0], 2, 'geometric')
     jobs[0]['config']['position_error'] = 0
     assert reporter.input_differences(jobs[0], original[0], 2)
     for identifiers in ([], ['unknown'], [chosen[0], chosen[0]]):

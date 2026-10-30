@@ -7,6 +7,15 @@ void require(bool value,const char* message){if(!value)throw std::runtime_error(
 int main() {
     Parameters p{6,1.15,2.5,.2,45*pi/180,8*pi/180,5,5,.003,20,8,16,50*pi/180,60*pi/180,0,200,3,10,1,.2};
     State s{0,0,80,12,0,0,0};Control base{.003*144+20./144,0,1,0};
+    OwnReference reference{{s,propagate(s,base,.2,p),propagate(s,base,.4,p)},{base,base},p};
+    for(double time:{-.03,0.,.015,.2,.39,.4,.43}) {
+        const auto window=sample_reference(reference,time,.2);
+        require(std::abs(window.state[0]-12*time)<1e-12,"native reference time/state changed");
+        for(std::size_t j=0;j<4;++j)require(std::abs(window.feedforward[j]-base[j])<1e-12,"held reference average changed");
+    }
+    bool bad_window=false;
+    try{sample_reference(reference,0.,0.);}catch(const std::invalid_argument&){bad_window=true;}
+    require(bad_window,"empty reference interval accepted");
     const auto nominal=local_control_update(s,s,base,nullptr,{},p,.2,.2);
     require(nominal.feasible&&!nominal.intervened,"nominal local controller rejected trim");
     for(std::size_t j=0;j<4;++j)require(std::abs(nominal.control[j]-base[j])<1e-12,"nominal command changed");

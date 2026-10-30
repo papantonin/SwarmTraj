@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize('settings,expected', [
-    ({}, ('geometric', 'python')),
+    ({}, ('physical_mission', 'cpp')),
     ({'dimensions': 3}, ('physical_mission', 'cpp')),
     ({'dimensions': 3, 'flight_model': 'legacy'}, ('geometric', 'python')),
     ({'dimensions': 3, 'generator_mode': 'geometric'}, ('geometric', 'python')),
@@ -36,10 +36,10 @@ def test_omitted_modes_resolve_once_to_concrete_values(settings, expected):
 
 
 @pytest.mark.parametrize('settings', [
-    {'numerical_backend': 'cpp'},
+    {'dimensions': 2, 'numerical_backend': 'cpp'},
     {'dimensions': 3, 'flight_model': 'legacy', 'numerical_backend': 'cpp'},
     {'dimensions': 3, 'generator_mode': 'geometric', 'numerical_backend': 'cpp'},
-    {'generator_mode': 'physical_mission'},
+    {'dimensions': 2, 'generator_mode': 'physical_mission'},
     {'dimensions': 3, 'passage_guidance': 'safe_windows'},
 ])
 def test_defaults_do_not_repair_explicitly_unsupported_requests(settings):
@@ -59,10 +59,6 @@ def test_missing_default_native_backend_fails_before_catalog_or_python_fallback(
 
 @pytest.mark.parametrize('options,mode,backend,workers', [
     ([], 'physical_mission', 'cpp', 1),
-    (['--numerical-backend', 'python'], 'physical_mission', 'python', 0),
-    (['--generator-mode', 'geometric'], 'geometric', 'python', 0),
-    (['--dimensions', '2'], 'geometric', 'python', 0),
-    (['--flight-model', 'legacy'], 'geometric', 'python', 0),
     (['--workers', '0'], 'physical_mission', 'cpp', 0),
     (['--workers', '2'], 'physical_mission', 'cpp', 2),
 ])
@@ -107,8 +103,8 @@ def test_fresh_editor_and_cpp_examples_select_native_while_archives_keep_python(
     from swarm_sim.trajectory2d.scenario_editor import ScenarioEditor
     editor = ScenarioEditor(snapshots, config.target, config)
     try:
-        assert editor.generator.get_status()[0] and editor.backend.get_status()[0]
-        assert editor.backend.active
+        assert editor.start_button.active
+        assert not hasattr(editor, "generator") and not hasattr(editor, "backend")
         editor.reset()
         assert editor.config == config
     finally:

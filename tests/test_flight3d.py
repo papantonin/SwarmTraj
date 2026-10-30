@@ -21,9 +21,9 @@ def test_total_speed_and_thirty_degree_descent_are_coupled():
     assert np.linalg.norm(v) == pytest.approx(12)
     assert v[2] == pytest.approx(-6)
     assert v[0] == pytest.approx(12 * np.cos(np.pi / 6))
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, descent_angle_deg=30, max_descent_rate=10)
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30, descent_angle_deg=30, max_descent_rate=10)
     assert descent_geometry(12, c)[0] == pytest.approx(6)
-    assert descent_geometry(12, replace(c, flight_model="legacy"))[0] == pytest.approx(6.92820323)
+    assert descent_geometry(12, replace(c, flight_model="legacy", generator_mode="geometric", numerical_backend="python"))[0] == pytest.approx(6.92820323)
 
 
 @pytest.mark.parametrize("gamma,bank", [(0, 0), (0, 30), (15, 20), (-30, -25)])
@@ -81,7 +81,7 @@ def test_invalid_flight_parameters_are_rejected(parameters):
 
 
 def test_initial_loaded_stall_and_missing_descent_brake_are_rejected_explicitly():
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, cruise_altitude_range=(30, 120),
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30, cruise_altitude_range=(30, 120),
                max_descent_rate=10, descent_angle_deg=30)
     s = replace(separate_loiter_snapshot()[0], altitude=30)
     missing_brake = plan_mission((s,), replace(c, flight=replace(c.flight, max_brake_acceleration=0)))
@@ -96,7 +96,7 @@ def test_initial_loaded_stall_and_missing_descent_brake_are_rejected_explicitly(
 
 @pytest.fixture(scope="module")
 def mission():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, cruise_altitude_range=(30, 120),
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=30, cruise_altitude_range=(30, 120),
                     descent_angle_deg=30, max_descent_rate=10, horizon=120, candidates=8)
     snapshots = tuple(replace(s, altitude=30 + 25 * k) for k, s in enumerate(separate_loiter_snapshot()))
     result = plan_mission(snapshots, config)
@@ -173,7 +173,7 @@ def test_zero_error_execution_and_numerical_refinement(mission):
 
 
 def test_dense_envelope_rejects_stall_and_unbounded_actuators():
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python')
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp')
     s = np.array([[0, 0, 100, 8, 0, 0, 0]])
     u = np.array([[1, 0, 2, 0]])
     assert not envelope_ok(s, u, c)
@@ -183,7 +183,7 @@ def test_dense_envelope_rejects_stall_and_unbounded_actuators():
 
 
 def test_3d_reachability_uses_total_speed_and_detects_impossible_vertical_distance():
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(0, 0), target_altitude=190, horizon=5)
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=(0, 0), target_altitude=190, horizon=5)
     s = replace(separate_loiter_snapshot()[0], altitude=30)
     result = plan_mission((s,), c)
     assert result.status == "destination_unreachable_within_horizon"
@@ -191,7 +191,7 @@ def test_3d_reachability_uses_total_speed_and_detects_impossible_vertical_distan
 
 
 def test_coupled_generation_is_reproducible_and_layer_mode_remains_available():
-    c = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=None, candidates=1, attempts=10)
+    c = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target_altitude=None, candidates=1, attempts=10)
     s = replace(separate_loiter_snapshot()[0], altitude=30)
     first = plan_mission((s,), c)
     second = plan_mission((s,), c)
@@ -203,7 +203,7 @@ def test_coupled_generation_is_reproducible_and_layer_mode_remains_available():
 
 def test_geometric_entry_allocation_with_four_coupled_simultaneous_departures():
     from swarm_sim.trajectory2d.planning import approach_angles
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 300), target_altitude=30, horizon=150,
+    config = Config(dimensions=3, generator_mode='physical_mission', numerical_backend='cpp', target=(500, 300), target_altitude=30, horizon=150,
                     cruise_altitude_range=(40, 110), descent_angle_deg=30, max_descent_rate=10,
                     activation_time=0, max_extra_loiter=0, approach_spread_deg=180, candidates=8)
     snapshots = tuple(replace(s, altitude=30 + 25 * k) for k, s in enumerate(separate_loiter_snapshot()))

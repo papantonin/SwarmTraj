@@ -1,13 +1,14 @@
 # Native physical-planner migration
 
-The execution checkpoint is Git `9887248`. This migration moves the remaining
-physical-planning algorithms into the standalone C++20 library, while keeping
-Python defaults, historical modes and an explicit Python validation oracle.
+The execution checkpoint is Git `9887248`. This historical migration moved the
+remaining physical-planning algorithms into the standalone C++20 library,
+initially keeping Python defaults, historical modes and a Python validation oracle.
 The point-mass planner is separate from PX4/Gazebo dynamics and controllers.
 
 This page records the migration checkpoints with their then-current Python
-defaults. New coupled 3D missions now use physical/C++ planning by default;
-see [selection, installation and archive compatibility](planner_defaults.md).
+defaults. Current production uses only physical/C++ planning and local execution;
+Python retains independent verification. Retired modes require explicit migration;
+see [installation and archive compatibility](planner_defaults.md).
 
 ## 1. Stable execution checkpoint
 
@@ -28,8 +29,9 @@ An unresolved 4096-evaluation contact search still fails validation.
 The Python boundary continues to bind immutable aircraft identities, exact IDs
 and declared profile families before resolving own physical parameters. Select
 the reference explicitly with `validate_individual(..., backend="python")`;
-`backend="cpp"` selects the native independent replay. The default follows
-`Config.numerical_backend`. Missing native validation capability raises an error.
+`backend="cpp"` selects the native independent replay. The public audit defaults
+to Python, independently of `Config.numerical_backend`; production planning uses
+native validation. Missing native validation capability raises an error.
 
 Targeted verification: 68 existing construction/contact regressions and 16
 differential native-validation tests pass. Three standalone C++ tests pass.

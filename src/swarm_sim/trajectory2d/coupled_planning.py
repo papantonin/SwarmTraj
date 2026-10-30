@@ -1,106 +1,12 @@
-"""Geometric proposals -> retimed references -> physically integrated candidates.
+"""Independent Python physical audit; no proposal generator or flight controller.
 
-The 2.5D catalogue is only a source of curves. Its independent XY/Z primitives
-are NOT executed. A local flight controller rolls the coupled aircraft out,
-and an independent numerical validator rejects untrackable proposals.
+This replay deliberately uses the independent Python equations and integration.
+It is not an alternative production planning or execution backend.
 """
-
-from dataclasses import replace
-
 import numpy as np
-from scipy.integrate import cumulative_trapezoid
-
 from .dynamics import G
-from .catalog import invalid, reject
-from .flight3d import (air_velocity, envelope_ok, from_snapshot,
-                       guidance, project, propagate)
-
-
-def convert_candidate(proposal, snapshot, config, diagnostics=None, *, passage=None):
-    # dt_real/dt_geometric = |velocity_geometric| / requested TOTAL airspeed.
-    fine = np.linspace(0, config.horizon, len(proposal.accelerations) * 4 + 1)
-    samples = proposal.sample(fine)
-    geometric_speed = np.hypot(proposal.speed, samples[:, 5])
-    from .rich_profiles import speed_schedule
-    if passage is None:
-        schedule = speed_schedule(proposal, config, fine)
-    else:
-        from .passage_guidance import speed_schedule_for_window
-        schedule = speed_schedule_for_window(proposal, config, fine, geometric_speed, passage, diagnostics)
-    if schedule is None:
-        return reject(diagnostics, "speed_profile_not_feasible" if passage is None else "passage_window_not_reachable")
-    scheduled_speed, speed_derivative = schedule
-    clock = cumulative_trapezoid(geometric_speed / scheduled_speed, fine, initial=0)
-    times = np.arange(len(proposal.states)) * proposal.dt
-    tau = np.interp(times, clock, fine)
-    reference = proposal.sample(tau)
-    norm = np.hypot(proposal.speed, reference[:, 5])
-    requested_speed = np.interp(tau, fine, scheduled_speed)
-    dilation = requested_speed / norm
-    index = np.clip(np.floor(tau / proposal.dt).astype(int), 0, len(proposal.accelerations) - 1)
-    yaw_rate = reference[:, 3] * dilation
-    gamma_rate = (proposal.vertical_accelerations[index] * proposal.speed**2 / norm**3
-                  if config.speed_profile == "constant" else
-                  proposal.vertical_accelerations[index] * proposal.speed / norm**2 * dilation)
-    gamma = np.arctan2(reference[:, 5], proposal.speed)
-    bank = np.arctan2(requested_speed * np.cos(gamma) * yaw_rate,
-                      G * np.cos(gamma) + requested_speed * gamma_rate)
-    full_reference = np.column_stack((reference[:, :2], reference[:, 4],
-                                     requested_speed, reference[:, 2], gamma, bank))
-    feedforward = np.column_stack((yaw_rate, gamma_rate))
-    speed_ff = np.interp(tau, fine, speed_derivative) * dilation
-    states = np.empty((len(times), 7))
-    controls = np.empty((len(times) - 1, 4))
-    states[0] = from_snapshot(snapshot)
-    interval = config.rollout_check_interval
-    block_start = 0
-    for k in range(len(controls)):
-        control = guidance(states[k], full_reference[k], feedforward[k], config, config.dt,
-                           speed_feedforward=float(speed_ff[k]))
-        following = propagate(states[k], control, config.dt, config.flight)
-        if interval == 1 and not envelope_ok(np.stack((states[k], following)), np.broadcast_to(control, (2, 4)), config):
-            return reject(diagnostics, "rollout_envelope")
-        states[k + 1], controls[k] = following, control
-        if interval > 1:
-            # Reject immediately before continuing through a singular/invalid
-            # state. These are a subset of the SAME original envelope checks.
-            if (not np.all(np.isfinite(following)) or following[3] <= 0
-                    or following[3] < config.limits.min_speed - 1e-7
-                    or following[3] > config.limits.max_speed + 1e-7
-                    or abs(following[5]) > np.deg2rad(config.flight.max_flight_path_deg) + 1e-7):
-                return reject(diagnostics, "rollout_speed_or_slope")
-            if (k + 1) % interval == 0 or k == len(controls) - 1:
-                # Check both ends with each segment's own held control, including
-                # both sides of switches. Nothing is downsampled or omitted.
-                endpoints = np.stack((states[block_start:k + 1], states[block_start + 1:k + 2]), axis=1)
-                block_controls = controls[block_start:k + 1, None, :]
-                if not envelope_ok(endpoints, block_controls, config):
-                    return reject(diagnostics, "rollout_envelope")
-                block_start = k + 1
-    expected = float(np.interp(proposal.arrival_time, fine, clock))
-    if expected > config.latest_nominal_arrival + 1e-9:
-        # Retiming preserves geometry but can exceed an otherwise valid geometric
-        # deadline. Record it before an expensive independent validation.
-        if diagnostics is not None and expected + config.clock_error + config.post_arrival_time > config.horizon:
-            diagnostics["required_horizon_s"] = expected + config.clock_error + config.post_arrival_time
-        return reject(diagnostics, "retimed_arrival_timing",
-                      "arrival_deadline_exceeded" if config.arrival_deadline is not None
-                      and expected + config.clock_error > config.arrival_deadline else "post_arrival_window_exceeds_horizon")
-    target_distance = np.linalg.norm(states[:, :2] - config.target, axis=1)
-    if config.target_altitude is not None:
-        target_distance = np.hypot(target_distance, states[:, 2] - config.target_altitude)
-    allowed = (times >= proposal.release_time) & (np.abs(times - expected) <= 4)
-    if not np.any(allowed):
-        return reject(diagnostics, "retimed_arrival_window")
-    arrival_index = int(np.argmin(np.where(allowed, target_distance, np.inf)))
-    projected = project(states, np.vstack((controls, controls[-1])), config.flight)
-    return replace(proposal, states=projected[:, :4], vertical_states=projected[:, 4:],
-                   accelerations=np.diff(projected[:, 3]) / config.dt,
-                   vertical_accelerations=np.diff(projected[:, 5]) / config.dt,
-                   arrival_time=float(times[arrival_index]), flight_states=states,
-                   flight_controls=controls, flight_parameters=config.flight,
-                   airspeed_limit=config.limits.max_speed,
-                   speed_reference=requested_speed if config.speed_profile != "constant" else None)
+from .catalog import invalid
+from .flight3d import air_velocity, envelope_ok, from_snapshot, project, propagate
 
 
 def validate_coupled(plan, snapshot, config, diagnostics=None):

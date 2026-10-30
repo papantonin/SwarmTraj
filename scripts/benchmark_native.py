@@ -1,7 +1,7 @@
-"""Paired Python/C++ physical planning on immutable saved campaign jobs.
+"""Native serial/spawn planning on immutable physical C++ campaign jobs.
 
-One/two spawn workers, identical seeds/limits/budgets. Python is the reference;
-one C++ worker uses the complete native planner. No PX4 qualification.
+Trials preserve seeds, limits and budgets. One worker uses the complete native
+planner; multiple workers schedule native catalogs. No PX4 qualification.
 """
 import argparse
 from dataclasses import replace
@@ -36,7 +36,11 @@ def worker(output,index):
     if sources()!=manifest['sources']:raise RuntimeError('benchmark sources changed')
     trial=manifest['trials'][index]
     snapshots,c=decode(trial['job'])
-    c=replace(c,generator_mode='physical_mission',numerical_backend=trial['backend'],planning_workers=trial['workers'])
+    from swarm_sim.trajectory2d.production import require_production
+    require_production(c)
+    if trial['backend'] != 'cpp':
+        raise ValueError('Python production benchmark workers are retired')
+    c=replace(c,planning_workers=trial['workers'])
     if c.aircraft_profiles:raise ValueError('saved benchmark scope is the common-airframe campaign')
     cpu_start=process_time();start=perf_counter()
     result=plan_mission(snapshots,c);seconds=perf_counter()-start
@@ -72,14 +76,17 @@ def main():
     if output.exists():parser.error('output must be new')
     raw=json.loads(args.reference.read_text());lookup={j['id']:j for j in raw['jobs']}
     if len(set(args.jobs))!=len(args.jobs) or set(args.jobs)-lookup.keys():parser.error('unknown/duplicate job IDs')
+    from swarm_sim.trajectory2d.production import require_production
+    for identifier in args.jobs:
+        require_production(decode(lookup[identifier])[1])
     output.mkdir(parents=True)
     trials=[dict(id=j,job=lookup[j],backend=b,workers=w,repeat=r) for j in args.jobs
-            for r in range(args.repeats) for b in ('python','cpp') for w in args.workers]
-    manifest={'schema':'swarm-native-benchmark-v1','sources':sources(),'native':identity(),
+            for r in range(args.repeats) for b in ('cpp',) for w in args.workers]
+    manifest={'schema':'swarm-native-benchmark-v2','sources':sources(),'native':identity(),
         'reference_sha256':hashlib.sha256(args.reference.read_bytes()).hexdigest(),
         'python':platform.python_version(),'numpy':np.__version__,'cpu_info':subprocess.check_output(['lscpu'],text=True),
         'blas_threads':1,'timeout_s':raw['timeout_s'],'trials':trials,
-        'scope':'complete physical planning; independent Python reference; serialized trials; uncontrolled desktop; process CPU excludes spawn children'}
+        'scope':'complete physical planning; serial C++ reference; serialized trials; uncontrolled desktop; process CPU excludes spawn children'}
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2))
     env=dict(os.environ,OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1')
     rows=[]
@@ -104,9 +111,9 @@ def main():
     comparisons=[];errors=[]
     for index,row in enumerate(rows):
         if row['completion']!='complete':errors.append(f'{index}: '+row['completion']);continue
-        reference=next(i for i,r in enumerate(rows) if r['id']==row['id'] and r['backend']=='python' and r['workers']==args.workers[0] and r['repeat']==row['repeat'])
+        reference=next(i for i,r in enumerate(rows) if r['id']==row['id'] and r['backend']=='cpp' and r['workers']==args.workers[0] and r['repeat']==row['repeat'])
         old=rows[reference];error=0.
-        if old['completion']!='complete':errors.append(f'{index}: Python reference incomplete');continue
+        if old['completion']!='complete':errors.append(f'{index}: serial C++ reference incomplete');continue
         if any(row[k]!=old.get(k) for k in ('status','counts','search_nodes')):errors.append(f'{index}: acceptance/search changed')
         if (output/f'{reference}.npz').exists():
             with np.load(output/f'{reference}.npz') as a,np.load(output/f'{index}.npz') as b:
@@ -120,8 +127,8 @@ def main():
         sibling=next(i for i,r in enumerate(rows) if r['id']==row['id'] and r['backend']==row['backend'] and r['workers']==args.workers[0] and r['repeat']==row['repeat'])
         if row['signature']!=rows[sibling].get('signature'):errors.append(f'{index}: serial/spawn mismatch')
         comparisons.append({'id':row['id'],'backend':row['backend'],'workers':row['workers'],
-            'seconds':row['seconds'],'speed_ratio_to_python_serial':old.get('seconds',0)/row['seconds'],
-            'max_array_difference':error,'exact_python_signature':row['signature']==old.get('signature')})
+            'seconds':row['seconds'],'speed_ratio_to_cpp_serial':old.get('seconds',0)/row['seconds'],
+            'max_array_difference':error,'exact_serial_signature':row['signature']==old.get('signature')})
     report={'comparisons':comparisons,'errors':errors,'all_trials_complete':all(r['completion']=='complete' for r in rows),
         'limits':['No guaranteed speedups','cProfile/RSS are not certified integration error bounds','RSS peaks include imports; child peak is largest child, not process-tree sum','No PX4 certificate transfer','Failed catalogs remain failures']}
     (output/'comparison.json').write_text(json.dumps(report,indent=2))

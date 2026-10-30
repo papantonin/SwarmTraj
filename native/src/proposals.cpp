@@ -95,6 +95,8 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     std::optional<double> approach,const Repair* repair,const std::string& mode,std::optional<double> departure,
     std::optional<double> hold,double extra_clearance) {
     auto fail=[](const char* reason){return ProposalResult{{},reason};};
+    if((hold&&(!std::isfinite(*hold)||*hold<c.level_hold))
+       ||!std::isfinite(extra_clearance)||extra_clearance<0.)return fail("invalid_proposal_adjustment");
     const auto cruise=choose_cruise(s,c,id,rng,repair,mode);if(!cruise)return fail("physical_approach_headroom");
     auto r=fixture_recipe(c,s.initial[3],*cruise);double terminal;
     if(!terminal_distance(s.initial[3],*cruise,c.physics,r,terminal))return fail("physical_terminal_construction");

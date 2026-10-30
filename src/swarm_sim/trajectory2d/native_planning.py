@@ -120,7 +120,38 @@ def require_planner():
     return module
 
 
+def propose_candidate(snapshot, config, candidate_id, rng, approach_angle=None, diagnostics=None,
+                      repair_hint=None, repair_mode=None, departure_override=None,
+                      level_hold_override=None, routing_extra_margin=0.):
+    """Own-input conversion around one native proposal; no Python construction."""
+    from .production import require_production
+    from .catalog import reject
+    require_production(config)
+    if config.aircraft_profiles:
+        raise ValueError('physical construction requires resolved own aircraft physics')
+    if ((level_hold_override is not None and (not np.isfinite(level_hold_override)
+            or level_hold_override < config.cruise_level_hold))
+            or not np.isfinite(routing_extra_margin) or routing_extra_margin < 0):
+        return reject(diagnostics, 'invalid_proposal_adjustment')
+    module = require_planner()
+    if module.build_info().get('proposal_api') != 1:
+        raise RuntimeError('native proposal API unavailable; rebuild with ./scripts/build_native.sh')
+    hint = asdict(repair_hint) if repair_hint is not None else None
+    if hint is not None:
+        hint['conflict']['positions'] = native._array(hint['conflict']['positions'])
+    record, state, reason = module.physical_proposal(designation(snapshot), options(config),
+        native.parameters(config), int(candidate_id), rng_record(rng.bit_generator.state),
+        approach_angle, hint, repair_mode or '', departure_override, level_hold_override,
+        float(routing_extra_margin))
+    rng.bit_generator.state = rng_from_record(state)
+    if reason:
+        return reject(diagnostics, reason)
+    return candidate_from_record(record, config)
+
+
 def mission_inputs(snapshots,config):
+    from .production import require_production
+    require_production(config)
     if not config.coupled_flight or config.generator_mode not in ('physical_mission','physical_recovery_seed'):
         raise ValueError('native mission planning requires coupled 3D physical generation')
     if not snapshots:
@@ -157,6 +188,8 @@ def extend_catalog(task):
     snapshot, full_config, angle, catalog, goal, *extra = task
     profile=full_config.profile_for(snapshot.drone_id)
     config=full_config.for_drone(snapshot.drone_id)
+    from .production import require_production
+    require_production(config)
     module=native.require_native()
     if module.build_info().get('catalog_api') != 1:
         raise RuntimeError('native catalog kernel unavailable; rebuild with ./scripts/build_native.sh')

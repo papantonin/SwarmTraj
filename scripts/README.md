@@ -12,7 +12,7 @@ fingerprints reference them. Use `--help` for each Python command's options.
 | [setup_px4_sitl.sh](setup_px4_sitl.sh) | Optional isolated PX4/Gazebo fixture setup |
 | [doctor.py](doctor.py) | Check Python dependencies and optional container compatibility without a flight |
 | [test.sh](test.sh) | Pytest runner isolated from external ROS plugins |
-| [build_native.sh](build_native.sh) | Build the optional C++20 extension and run standalone C++ tests |
+| [build_native.sh](build_native.sh) | Build/check the required C++20 engine and run standalone C++ tests |
 
 ## Planning and execution comparisons
 
@@ -25,7 +25,7 @@ fingerprints reference them. Use `--help` for each Python command's options.
 | [benchmark_intervals_profiles.py](benchmark_intervals_profiles.py) | Departure windows, rich/mixed profiles and passages |
 | [benchmark_tracking.py](benchmark_tracking.py) | Identical-plan disturbance and rejection trials |
 | [benchmark_physical_missions.py](benchmark_physical_missions.py) | Paired historical/direct-physical individual missions, with optional execution checks |
-| [benchmark_native.py](benchmark_native.py) | Paired complete Python/C++ planning on saved inputs, process counts, signatures, numerical deltas, wall/process CPU time and RSS |
+| [benchmark_native.py](benchmark_native.py) | Native serial/spawn planning on saved C++ inputs, signatures, numerical deltas, CPU time and RSS |
 
 ## Campaigns, audits and reports
 
@@ -76,17 +76,13 @@ for each generator. Dedicated serial/spawn replay pairs keep their saved counts.
 `--jobs ID ...` records a diagnostic subset without qualifying default promotion.
 See the [migration procedure](../docs/generator_migration.md).
 
-Add `--numerical-backend cpp` to a physical campaign after
-`./scripts/build_native.sh` to compare the optional C++ kernel on the same saved
-inputs. The manifest freezes native sources and binary identity as well as the
-explicit override. The report retains Python physical revalidation and labels
-native recovery differences using the declared float64 comparison tolerances.
-With one planning worker the complete planner runs in one native call. Add
-`--execution-backend cpp` independently to replay execution expectations with
-the local C++ kernel and unchanged Python observer; the default remains Python.
-The reporter explicitly uses Python individual validation for saved plans and
-negative checks, regardless of the selected planning backend.
-See [native build, tests and measurements](../docs/native_kernel.md).
+Production planning and local execution are exclusively C++; no backend switch
+is needed. New campaign inputs record physical/C++ explicitly. Replay of archived
+Python/geometric inputs requires explicit creation of a new request; archived
+journals and source fingerprints remain unchanged. Native execution benchmarks
+measure C++ only, while saved historical paired records remain analysis data.
+Independent Python validation/observation remains separate. See
+[production policy and explicit scenario migration](../docs/planner_defaults.md).
 
 The [completed saved-input comparison](../docs/phase2_kinodynamic.md#completed-saved-input-comparison)
 records 192/230 physical planning successes against 180/230 historically,

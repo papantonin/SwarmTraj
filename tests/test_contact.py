@@ -44,10 +44,13 @@ def test_observer_sampler_uses_outgoing_control_at_switch():
     np.testing.assert_allclose(sample(.3), propagate(following, second, .1, f, substeps=4), atol=1e-12)
 
 
-def test_old_seed19_obstacle_candidate_is_rejected_before_selection():
+@pytest.mark.parametrize('implementation', ['python', 'cpp'])
+def test_old_seed19_obstacle_candidate_is_rejected_before_selection(implementation):
     from dataclasses import replace
-    from swarm_sim.trajectory2d import Config, separate_loiter_snapshot
-    from swarm_sim.trajectory2d.planning import _candidate, approach_angles, validate_individual
+    from swarm_sim.trajectory2d import Config, Trajectory, separate_loiter_snapshot, FlightLimits
+    from swarm_sim.trajectory2d.planning import validate_individual
+    from pathlib import Path
+    import json
     from swarm_sim.trajectory2d.obstacles import load_obstacles
     from swarm_sim.trajectory2d.contact import plan_contact
     config = Config(seed=19, dimensions=3, generator_mode='geometric', numerical_backend='python', target=(500, 500), target_altitude=30, horizon=180,
@@ -55,12 +58,17 @@ def test_old_seed19_obstacle_candidate_is_rejected_before_selection():
                     approach_spread_deg=180, obstacle_routing='spatial',
                     obstacles=load_obstacles('examples/scenarios/static_obstacles.json'))
     snapshots = tuple(replace(s, altitude=30 + 25*k) for k, s in enumerate(separate_loiter_snapshot()))
-    rng = np.random.Generator(np.random.PCG64(np.random.SeedSequence([19, 3])))
-    plan = _candidate(snapshots[3], config, 0, rng, approach_angles(snapshots, config)[3])
-    assert plan is not None
+    # Keep the actual historical negative without retaining its retired generator.
+    with np.load(Path(__file__).parent/'fixtures/historical-contact-seed19.npz') as data:
+        values = json.loads(str(data['metadata']))
+        values['flight_parameters'] = FlightLimits(**values['flight_parameters'])
+        values['cruise_levels_m'] = tuple(values['cruise_levels_m'])
+        values['generation_phases'] = tuple(tuple(p) for p in values['generation_phases'])
+        values.update({key: data[key] for key in data.files if key != 'metadata'})
+    plan = Trajectory(**values)
     assert -np.rad2deg(plan_contact(plan, config).state[5]) > 31
     diagnostics = {}
-    assert not validate_individual(plan, snapshots[3], config, diagnostics)
+    assert not validate_individual(plan, snapshots[3], config, diagnostics, backend=implementation)
     assert diagnostics['rejection'] == 'validation_descent_angle'
 
 

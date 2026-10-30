@@ -32,8 +32,8 @@ SwarmTraj plans coordinated 3D missions for fixed-wing UAV fleets from one share
 initial snapshot. It generates and validates candidate trajectories offline,
 selects a compatible fleet plan, and executes each aircraft's own plan using only
 its own state and clock, without inter-aircraft telemetry. Python handles the
-interface, orchestration and visualization; C++20 provides the default physical
-planner, and a separate adapter connects to PX4/Gazebo SITL experiments.
+interface, orchestration and visualization; C++20 runs physical planning and local
+flight execution, and a separate adapter connects to PX4/Gazebo SITL experiments.
 
 ## Features
 
@@ -56,13 +56,11 @@ Requires Linux, Python 3.12+, a C++20 compiler, CMake 3.20+ and Python developme
 headers. The desktop editor also needs a Matplotlib GUI backend, such as Tk
 (`python3-tk` on Ubuntu).
 
-From the repository root, install only the trajectory dependencies and build the
-native planner:
+From the repository root, install the trajectory tools and build/check the
+required native engine:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[trajectory2d]'
-./scripts/build_native.sh
+bash scripts/setup.sh --trajectory
 ```
 
 Launch the four-aircraft demonstration:
@@ -73,8 +71,8 @@ Launch the four-aircraft demonstration:
 
 The editor opens in **Mission** view. Position the aircraft and target, then
 select **Launch mission** to calculate trajectories and open the 3D playback.
-New coupled 3D missions use C++ planning by default; Python remains available as
-an explicit reference backend. This demo does not require PyBullet, PX4 or Gazebo.
+Planning and local flight calculations use C++; Python provides the interface
+and independent observation. This demo does not require PyBullet, PX4 or Gazebo.
 To run the Gazebo workflow pictured above, follow the
 [PX4/Gazebo setup](docs/gazebo_editor.md) and
 [four-aircraft example](docs/gazebo_fleet.md).
@@ -93,7 +91,8 @@ independent full-horizon separation and clearance rechecks before execution.
 
 ## Current limitations
 
-- The planning model is an illustrative point-mass model, without calibrated
+- Production supports coupled 3D physical planning; planar/geometric legacy
+  modes are retired. The illustrative point-mass model has no calibrated
   aircraft aerodynamics or 6-DoF attitude dynamics.
 - Finite candidate catalogs and bounded search can miss feasible solutions.
 - Numerical validation depends on the model, tracking and clock assumptions;

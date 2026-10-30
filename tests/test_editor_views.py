@@ -36,11 +36,13 @@ def test_mission_is_default_and_advanced_reuses_controls_without_changing_inputs
     assert not editor.advanced
     assert sum(w.ax.get_visible() for w in widgets) == 5
     assert editor.x_input.ax.get_visible() and editor.heading_input.ax.get_visible()
-    assert not editor.generator.ax.get_visible() and not editor.backend.ax.get_visible()
+    assert not hasattr(editor, "generator") and not hasattr(editor, "backend")
+    assert "C++" in editor.engine_info.get_text()
     assert not editor.horizon_input.ax.get_visible()
     click(editor, editor.advanced_button)
     assert editor.advanced and editor.horizon_input.ax.get_visible()
-    assert editor.generator.ax.get_visible() and editor.backend.ax.get_visible()
+    assert not hasattr(editor, "generator") and not hasattr(editor, "backend")
+    assert "C++" in editor.engine_info.get_text()
     assert not editor.x_input.ax.get_visible()
     assert tuple(editor._inputs) == widgets
     click(editor, editor.mission_button)
@@ -79,8 +81,6 @@ def test_hidden_invalid_mission_settings_still_block_launch_transactionally(edit
 
 
 def test_hidden_valid_settings_are_applied_to_the_actual_launch(editor):
-    # Select the reference explicitly to isolate the form from native availability.
-    editor.config = replace(editor.config, numerical_backend='python')
     observed = []
     editor.launch_validator = lambda snapshots, config: observed.append((snapshots, config))
     editor.set_advanced(True)
@@ -145,7 +145,7 @@ def test_summary_tracks_binding_and_pending_constraints_then_reset_restores_miss
 
 
 def test_planar_view_has_no_altitude_or_3d_profile_controls():
-    config = Config()
+    config = Config(dimensions=2)
     editor = ScenarioEditor(separate_loiter_snapshot(), config.target, config)
     try:
         assert not editor.altitude_input.ax.get_visible()
@@ -153,7 +153,8 @@ def test_planar_view_has_no_altitude_or_3d_profile_controls():
         editor.set_advanced(True)
         assert not editor.cruise_min_input.ax.get_visible()
         assert not editor.descent_input.ax.get_visible()
-        assert not editor.generator.active and not editor.backend.active
+        assert not editor.start_button.active
+        assert not hasattr(editor, "generator") and not hasattr(editor, "backend")
     finally:
         plt.close(editor.figure)
 
@@ -162,7 +163,7 @@ def test_compact_obstacle_captions_preserve_geometry_and_historical_renderer_lab
     import numpy as np
     from swarm_sim.trajectory2d.obstacle_view import draw_obstacles_2d
     from swarm_sim.trajectory2d.obstacles import Obstacle
-    config = Config(obstacles=(Obstacle.cylinder(20, 30, 10, 0, 50),
+    config = Config(dimensions=2, obstacles=(Obstacle.cylinder(20, 30, 10, 0, 50),
                                Obstacle.box(60, 70, 0, 90, 100, 50)))
     figure, axes = plt.subplots(1, 2)
     try:

@@ -14,7 +14,7 @@ requires_native = pytest.mark.skipif(not HAS_NATIVE, reason='optional C++ extens
 
 
 def case(**kwargs):
-    c=Config(dimensions=3, numerical_backend='python',generator_mode='physical_mission',target=(500.,0.),
+    c=Config(dimensions=3, numerical_backend='cpp',generator_mode='physical_mission',target=(500.,0.),
         target_altitude=30.,descent_angle_deg=30.,max_descent_rate=8.,horizon=120.,
         cruise_altitude_range=(70.,100.),max_extra_loiter=0.,candidates=1,attempts=3)
     c=replace(c,**kwargs)
@@ -23,8 +23,8 @@ def case(**kwargs):
 
 
 def test_backend_is_explicit_and_physical_only(monkeypatch):
-    assert Config().numerical_backend=='python'
-    for changes in ({'numerical_backend':'bad'},{'numerical_backend':'cpp'},
+    assert Config().numerical_backend=='cpp'
+    for changes in ({'numerical_backend':'bad'},{'dimensions':2,'numerical_backend':'cpp'},
                     {'dimensions':3,'generator_mode':'geometric','numerical_backend':'cpp'}):
         with pytest.raises(ValueError):Config(**changes)
     native.require_native.cache_clear()
@@ -67,7 +67,7 @@ def test_envelope_boundaries_and_both_control_switch_sides():
         for z in (c.min_altitude-2e-7,c.min_altitude,c.max_altitude,c.max_altitude+2e-7):
             s=state.copy();s[3]=v;s[2]=z
             assert native.evaluate('envelope',s,u,c)==py.envelope_ok(s,u,c)
-    from swarm_sim.trajectory2d.physical_generation import _step
+    from checked_step_reference import checked_step as _step
     for field,value in ((0,6.),(1,6.),(2,100.),(3,10.)):
         bad=u.copy();bad[field]=value
         assert native.checked_step(state,bad,c) is None and _step(state,bad,c) is None

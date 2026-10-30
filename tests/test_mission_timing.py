@@ -10,7 +10,6 @@ from swarm_sim.trajectory2d.dynamics import propagate
 from swarm_sim.trajectory2d.execution import simulate
 from swarm_sim.trajectory2d.mission_timing import recovery_completion
 from swarm_sim.trajectory2d.planning import validate_individual
-from swarm_sim.trajectory2d.vertical import build_profile
 
 
 @pytest.mark.parametrize("values", [
@@ -25,7 +24,7 @@ def test_invalid_timing_and_routing_settings(values):
 
 
 def straight_plan():
-    config = Config(target=(120, 0), horizon=20, activation_time=0, max_extra_loiter=0)
+    config = Config(dimensions=2, target=(120, 0), horizon=20, activation_time=0, max_extra_loiter=0)
     snapshot = Snapshot(0, (0, 0, 0, 0), 12)
     times = np.arange(round(config.horizon / config.dt) + 1) * config.dt
     states = propagate(snapshot.state, snapshot.speed, 0, times)
@@ -55,7 +54,20 @@ def test_independent_validator_rejects_truncated_horizon_without_obstacles():
 
 
 def test_observer_reports_arrival_deadline_even_for_unvalidated_test_plan():
-    _, plan, config = straight_plan()
+    # Manufactured straight physical flight preserves the historical timing
+    # fixture, while local execution is now exclusively native.
+    from swarm_sim.trajectory2d.flight3d import trim_control, project
+    config = Config(dimensions=3, target=(120, 0), target_altitude=80., horizon=20.,
+                    activation_time=0., max_extra_loiter=0.)
+    times = np.arange(round(config.horizon/config.dt)+1)*config.dt
+    states = np.tile([0., 0., 80., 12., 0., 0., 0.], (len(times), 1))
+    states[:, 0] = 12.*times
+    command = trim_control(states[0], config.flight)
+    projected = project(states, command, config.flight)
+    plan = Trajectory(0, 0, 12., config.dt, projected[:, :4], np.zeros(len(times)-1), 10., 0.,
+        vertical_states=projected[:, 4:], vertical_accelerations=np.zeros(len(times)-1),
+        cruise_altitude=80., flight_states=states, flight_controls=np.tile(command, (len(times)-1, 1)),
+        flight_parameters=config.flight, airspeed_limit=config.limits.max_speed)
     report = simulate((plan,), replace(config, arrival_deadline=9)).report
     assert report['all_arrived']
     assert not report['arrival_deadline_verified_in_execution']
@@ -65,38 +77,8 @@ def test_observer_reports_arrival_deadline_even_for_unvalidated_test_plan():
     assert not report['post_arrival_time_verified_in_execution']
 
 
-def test_vertical_rejections_identify_climb_and_post_passage_recovery():
-    config = Config(dimensions=3, generator_mode='geometric', numerical_backend='python', target_altitude=30, descent_angle_deg=30,
-                    max_descent_rate=10, horizon=60, activation_time=0)
-    snapshot = Snapshot(0, (0, 0, 0, 0), 12, altitude=80, cruise_altitude=80)
-    diagnostic = {}
-    assert build_profile(snapshot, config, 0, 45, np.random.default_rng(1), diagnostic) is None
-    assert diagnostic['rejection_detail'] == 'recovery_exceeds_horizon'
-    assert diagnostic['required_horizon_s'] > config.horizon
-    diagnostic = {}
-    snapshot = replace(snapshot, altitude=30, cruise_altitude=120)
-    assert build_profile(snapshot, config, 0, 5, np.random.default_rng(1), diagnostic) is None
-    assert diagnostic['rejection_detail'] == 'climb_cannot_finish_before_arrival'
 
 
-def test_advice_keeps_configuration_and_explicit_deadline_unchanged(monkeypatch):
-    import swarm_sim.trajectory2d.planning as planning
-    from swarm_sim.trajectory2d.catalog import reject
-
-    def candidate(snapshot, config, candidate_id, rng, angle=None, diagnostics=None):
-        diagnostics['required_horizon_s'] = 140
-        return reject(diagnostics, 'vertical_profile', 'recovery_exceeds_horizon')
-
-    monkeypatch.setattr(planning, '_candidate', candidate)
-    config = Config(attempts=2, arrival_deadline=70)
-    result = plan_mission(separate_loiter_snapshot(4), config)
-    assert result.status == 'no_candidate'
-    timing = result.diagnostics['timing']
-    assert timing['rejection_details'] == {'recovery_exceeds_horizon': 8}
-    assert timing['suggested_horizon_s'] >= 140
-    assert not timing['suggestion_is_feasibility_guarantee']
-    assert any('deadline' in a for a in timing['advice'])
-    assert config.horizon == 90 and config.arrival_deadline == 70
 
 
 def test_recovery_metadata_is_after_last_unsettled_sample():
