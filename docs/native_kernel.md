@@ -8,7 +8,9 @@ pull-out and complete physical candidate construction. Proposal sampling,
 per-aircraft random streams, routing hints, catalogs, joint selection,
 visualization and reports remain in Python. A separate opt-in execution backend
 now covers constrained own-state control and sampled simulator propagation.
-Independent candidate validation and global execution observation remain Python.
+Independent candidate validation now also has a native implementation; the
+Python implementation remains the explicit reference oracle. Global execution
+observation remains Python. See the [full-planner migration](native_planner.md).
 
 ## Build and run
 
@@ -88,7 +90,7 @@ can explicitly supply wind and another subdivision count.
 
 Both backends preserve nominal two-substep endpoints, independently reintegrated
 four-substep samples at fractions 0, 0.25, 0.5, 0.75 and 1, and the nominal endpoint
-envelope check. The Python independent validator still runs for every candidate,
+envelope check. An independent validator still runs for every candidate,
 including full-horizon contact, obstacle and actuator-switch checks. Joint pair
 and reservation checks remain unchanged. Loaded own-aircraft profiles retain
 their effective values and enclosing radii. Native histories are bounded to

@@ -1,4 +1,4 @@
-"""Explicit optional C++ construction; Python dynamics/validators stay independent.
+"""Explicit native kernels; Python dynamics/validation remain reference oracles.
 
 The binding copies validated float64 input buffers before releasing the GIL.
 Returned arrays are views of immutable bytes, never views of reusable scratch.
@@ -31,6 +31,55 @@ def require_execution_native():
     if module.build_info().get('execution_api') != 1:
         raise RuntimeError('C++ execution kernel is unavailable; rebuild with ./scripts/build_native.sh')
     return module
+
+
+def require_validation_native():
+    module = require_native()
+    if module.build_info().get('validation_api') != 1:
+        raise RuntimeError('C++ validation kernel is unavailable; rebuild with ./scripts/build_native.sh')
+    return module
+
+
+def validation_options(config):
+    return dict(steps=round(config.horizon/config.dt), activation=float(config.activation_time),
+        min_delay=float(config.min_extra_loiter), max_delay=float(config.max_extra_loiter),
+        latest_arrival=float(config.latest_nominal_arrival), target=_array(config.target),
+        target_altitude=config.target_altitude, target_radius=float(config.target_radius),
+        position_error=float(config.position_error), descent_degrees=float(config.descent_angle_deg),
+        spread_degrees=float(config.approach_spread_deg),
+        cruise_range=None if config.cruise_altitude_range is None else _array(config.cruise_altitude_range),
+        cruise_levels=config.cruise_levels, smooth_speed=config.speed_profile != 'constant',
+        speed_range=_array(config.speed_profile_range or (0., 0.)),
+        speed_acceleration=float(config.speed_profile_acceleration), clock_error=float(config.clock_error),
+        aircraft_radius=float(config.aircraft_radius), obstacle_clearance=float(config.obstacle_clearance),
+        obstacles=_array([[int(o.kind == 'cylinder'), *o.center, *o.half_extents]
+                          for o in config.obstacles]).reshape(-1, 7))
+
+
+def validate_candidate(plan, snapshot, config, diagnostics=None):
+    """Native independent replay after Python input/profile/family binding checks."""
+    from .catalog import invalid
+    from .flight3d import from_snapshot
+    count = round(config.horizon/config.dt)
+    if (plan.flight_states is None or plan.flight_controls is None
+            or plan.flight_states.shape != (count+1, 7) or plan.flight_controls.shape != (count, 4)
+            or plan.states.shape != (count+1, 4) or plan.accelerations.shape != (count,)
+            or plan.vertical_states is None or plan.vertical_states.shape != (count+1, 2)
+            or plan.vertical_accelerations is None or plan.vertical_accelerations.shape != (count,)
+            or plan.flight_parameters != config.flight or plan.airspeed_limit != config.limits.max_speed):
+        return invalid(diagnostics, 'validation_metadata')
+    record = dict(drone_id=plan.drone_id, candidate_id=plan.candidate_id, speed=plan.speed,
+        dt=plan.dt, release=plan.release_time, arrival=plan.arrival_time, cruise=plan.cruise_altitude,
+        approach=plan.approach_angle, states=_array(plan.flight_states), controls=_array(plan.flight_controls),
+        projected=_array(np.column_stack((plan.states, plan.vertical_states))),
+        acceleration=_array(plan.accelerations), vertical_acceleration=_array(plan.vertical_accelerations),
+        levels=_array(plan.cruise_levels_m),
+        speed_reference=None if plan.speed_reference is None else _array(plan.speed_reference))
+    reason, contact = require_validation_native().validate_candidate(record, validation_options(config),
+        parameters(config), _array(from_snapshot(snapshot)), float(snapshot.state[3]), snapshot.cruise_altitude)
+    if contact is not None and diagnostics is not None:
+        diagnostics['first_contact_time_s'] = contact
+    return invalid(diagnostics, reason) if reason else True
 
 
 def parameters(config):

@@ -171,7 +171,7 @@ def test_python_validator_is_not_routed_to_native(monkeypatch):
     from swarm_sim.trajectory2d.planning import validate_individual
     s,c=case(numerical_backend='cpp');r=plan_mission((s,),c);assert r.validated
     monkeypatch.setattr(native,'require_native',lambda:pytest.fail('validator must remain Python'))
-    assert validate_individual(r.plans[0],s,c)
+    assert validate_individual(r.plans[0],s,c,backend='python')
 
 
 def test_shared_px4_schema_persists_explicit_backend_choice(tmp_path):

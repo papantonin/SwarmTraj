@@ -10,6 +10,7 @@
 #include <cmath>
 #include "build_info.hpp"
 using namespace swarmtraj;
+PyObject* swarm_validate_candidate(PyObject*,PyObject*);
 namespace {
 struct Buffer {
     Py_buffer view{};
@@ -177,8 +178,8 @@ PyObject* evaluate(PyObject*,PyObject* args) {
 #else
 #define SWARM_COMPILER __VERSION__
 #endif
-PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:i,s:s,s:s,s:s}","abi",1,"execution_api",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
-PyMethodDef methods[]={{"evaluate",evaluate,METH_VARARGS,"Checked native numerical dispatch; float64 contiguous buffers."},{"build_info",info,METH_NOARGS,"Native build identity."},{nullptr,nullptr,0,nullptr}};
+PyObject* info(PyObject*,PyObject*) {return Py_BuildValue("{s:i,s:i,s:i,s:s,s:s,s:s}","abi",1,"execution_api",1,"validation_api",1,"compiler",SWARM_COMPILER,"source_sha256",SWARM_SOURCE_SHA,"math","float64; strict FP; no fast-math or contraction");}
+PyMethodDef methods[]={{"evaluate",evaluate,METH_VARARGS,"Checked native numerical dispatch; float64 contiguous buffers."},{"validate_candidate",swarm_validate_candidate,METH_VARARGS,"Independent full-horizon coupled candidate validation."},{"build_info",info,METH_NOARGS,"Native build identity."},{nullptr,nullptr,0,nullptr}};
 PyModuleDef module={PyModuleDef_HEAD_INIT,"_trajectory_native","Optional coordinated point-mass numerical core.",-1,methods};
 }
 PyMODINIT_FUNC PyInit__trajectory_native(){return PyModule_Create(&module);}

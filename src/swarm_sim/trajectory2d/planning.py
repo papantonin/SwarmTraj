@@ -73,7 +73,7 @@ class Config:
     passage_guidance: str = "none"  # Offline intermediate-cell speed fitting, not departure retiming.
     candidate_guidance: str = "none"  # Own-rejection reference adjustments; never weaker validators.
     generator_mode: str = "geometric"  # Opt-in direct physical missions; historical default unchanged.
-    numerical_backend: str = "python"  # Optional construction kernel; validators always use Python.
+    numerical_backend: str = "python"  # Optional native kernels; Python validation remains an explicit oracle.
     aircraft_profiles: tuple = ()  # Complete explicit (drone_id, AircraftProfile) bindings; offline only.
     aircraft_radius: float = 0.0  # Enclosing sphere; zero preserves the legacy point-aircraft model.
 
@@ -626,9 +626,12 @@ def _candidate(snapshot, config, candidate_id, rng, approach_angle=None, diagnos
                       routing_mode=routing_mode, cruise_levels_m=profile_info.get("levels", ()))
 
 
-def _validate_individual(plan, snapshot, config, diagnostics=None):
+def _validate_individual(plan, snapshot, config, diagnostics=None, *, backend='python'):
     """Validate the stored primitives independently of candidate construction."""
     if config.coupled_flight:
+        if backend == 'cpp':
+            from .native_backend import validate_candidate
+            return validate_candidate(plan, snapshot, config, diagnostics)
         from .coupled_planning import validate_coupled
         return validate_coupled(plan, snapshot, config, diagnostics)
     if plan.speed_reference is not None or plan.cruise_levels_m:
@@ -717,7 +720,13 @@ def _validate_individual(plan, snapshot, config, diagnostics=None):
                 and approach_is_valid(plan, config))
 
 
-def validate_individual(plan, snapshot, config, diagnostics=None):
+def validate_individual(plan, snapshot, config, diagnostics=None, *, backend=None):
+    """Validate independently; backend='python' retains the differential oracle."""
+    backend = config.numerical_backend if backend is None else backend
+    if backend not in ('python', 'cpp'):
+        raise ValueError('validation backend must be python or cpp')
+    if backend == 'cpp' and not config.coupled_flight:
+        raise ValueError('C++ validation requires coupled 3D flight')
     from .catalog import invalid
     from .profile_policy import validation_config
     if plan.drone_id != snapshot.drone_id:
@@ -744,9 +753,9 @@ def validate_individual(plan, snapshot, config, diagnostics=None):
     if (plan.dt != config.dt or len(plan.states) != round(config.horizon / config.dt) + 1
             or len(plan.accelerations) != round(config.horizon / config.dt)):
         return invalid(diagnostics, "plan_horizon")
-    if not _validate_individual(plan, snapshot, config, diagnostics):
+    if not _validate_individual(plan, snapshot, config, diagnostics, backend=backend):
         return False
-    if config.obstacles:
+    if config.obstacles and backend != 'cpp':
         from .obstacles import plan_clearance, nominal_clearance_required
         if plan.dt != config.dt or len(plan.states) != round(config.horizon / config.dt) + 1:
             return invalid(diagnostics, "obstacle_plan_horizon")
