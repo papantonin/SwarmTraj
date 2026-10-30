@@ -31,6 +31,10 @@ For four aircraft, use the separate opt-in
 ```
 
 `--edit-scenario` opens the existing Python/Matplotlib preparation window.
+It starts in **Mission** view, with the map and selection-specific inputs.
+Detailed timing, loiter, cruise and planner options are grouped under
+**Advanced**. The summary keeps configured constraints visible; switching views
+does not change their values. See the [editor guide](scenario_editor.md).
 `--gui` controls the subsequent Gazebo window. `--run` explicitly authorizes
 starting the isolated simulator and flying the simulated aircraft. Without
 `--run`, editing and calculation only produce artifacts. Closing the editor
@@ -120,6 +124,10 @@ only, not physical states, planning, native commands or removal criteria.
 
 ### Scene controls
 
+Position, heading, airspeed and obstacle dimensions are in **Mission** view.
+The detailed timing, cruise, loiter and generator/backend controls listed below
+are in **Advanced**. **Reset** restores the original scenario and Mission view.
+
 - Select **Drone 0**, click the map or enter X/Y and **Altitude (m)**. The
   selected point is the aircraft's actual initial position, **not** the center
   of its holding circle. **Heading (°)** is the tangent heading: 0° east, 90° north.
@@ -135,8 +143,9 @@ only, not physical states, planning, native commands or removal criteria.
   XY destination, not a common XYZ point. Initial/cruise/target heights need not
   be identical; moderate altitude transitions are exported as spatial waypoints.
 - Select an **Obstacle** to edit its XYZ center and half-dimensions. For a
-  cylinder, **Radius / half-X** is its radius and **Half-height** is half its
-  height. For a box, the three dimensions are half-extents. Click the map to
+  cylinder, **Radius (m)** is its radius and **Half-height (m)** is half its
+  height. A box uses **Half-width X (m)**, **Half-width Y (m)** and **Half-height (m)**.
+  Click the map to
   move an obstacle center. **+ Cylinder**, **+ Box** and **Remove obstacle**
   add/remove solids. **Apply** commits the current fields; **Reset**
   restores the input scene, including its obstacles and holding geometry.

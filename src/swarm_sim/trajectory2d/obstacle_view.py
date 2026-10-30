@@ -5,7 +5,7 @@ from itertools import product
 import numpy as np
 
 
-def draw_obstacles_2d(axis, config):
+def draw_obstacles_2d(axis, config, *, compact_labels=False):
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
 
@@ -24,7 +24,8 @@ def draw_obstacles_2d(axis, config):
         axis.add_patch(shape)
         axis.add_patch(margin)
         height = f"\nz={low[2]:g}–{high[2]:g} m" if config.dimensions == 3 else ""
-        axis.annotate(f"Obstacle {index}{height}", center[:2], ha="center", fontsize=8, color="black")
+        caption = f'O{index}' if compact_labels else f"Obstacle {index}{height}"
+        axis.annotate(caption, center[:2], ha="center", fontsize=8, color="black")
 
 
 def draw_obstacles_3d(axis, config):

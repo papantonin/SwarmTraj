@@ -23,8 +23,9 @@ change generator and backend together. No `None` or automatic-selection token
 is exported in a mission or v3 scenario. The library defaults to one worker;
 explicit `--workers 0` requests automatic spawn workers, including with C++.
 
-The editor starts with **Physical generator** and **C++ construction (off:
-Python)** checked for fresh coupled 3D scenes. These are the existing labels;
+The editor starts in **Mission** view. Under **Advanced**, **Physical generator**
+and **C++ construction (off: Python)** are checked for fresh coupled 3D scenes.
+These are the existing labels;
 the C++ selection now covers the complete physical numerical planner. Uncheck
 the C++ option before switching to the geometric generator. **Reset** restores
 the original effective selections and scene. A loaded Python scenario remains

@@ -36,6 +36,7 @@ missions do not inherit the planner's timing or separation claims.
 - [Complete native physical planner: migration and qualification](native_planner.md)
 - [Default C++ planner: selection, installation and saved-scenario compatibility](planner_defaults.md)
 - [Current planning and execution architecture](architecture.md)
+- [Mission editor: essential inputs and Advanced settings](scenario_editor.md)
 
 ## Measurements and validation
 

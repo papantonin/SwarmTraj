@@ -64,6 +64,10 @@ for the historical generator. See [default selection and compatibility](docs/pla
 [build instructions and measured results](docs/native_kernel.md) and the
 [full-planner migration](docs/native_planner.md).
 
+The [preparation editor](docs/scenario_editor.md) opens with the map and essential
+aircraft/target/obstacle inputs. Detailed parameters are grouped in **Advanced**;
+configured constraints remain visible in the mission summary.
+
 The independent `--execution-backend cpp` option also compiles constrained
 own-state tracking and simulator propagation for coupled 3D plans. Both backend
 choices are independent: local execution still defaults to Python, and global

@@ -80,6 +80,11 @@ and the historical legacy controller reject C++ execution explicitly.
 
 ## Preparing drones and destination
 
+The editor opens in **Mission** view with the map and the selected object's
+essential inputs. **Advanced** contains timing, cruise, loiter, profile and
+planner settings. The summary retains configured constraints, and **Reset**
+restores the scenario and Mission view. See the [editor guide](scenario_editor.md).
+
 The preparation map remains an XY projection: select a drone, then click on
 the map or enter x/y. Fields on the right let you edit:
 

@@ -27,7 +27,7 @@ class ScenarioEditor:
         self.figure = plt.figure(figsize=(14, 9))
         self.axis = self.figure.add_axes([0.08, 0.43, 0.64, 0.47])
         self.figure.suptitle("Prepare the mission — position aircraft and target")
-        self.figure.text(0.08, 0.94,
+        self.instructions = self.figure.text(0.08, 0.94,
                          "Select an item on the right, then click the map or enter its coordinates.",
                          fontsize=10)
         self._build_selector()
@@ -48,7 +48,7 @@ class ScenarioEditor:
                                       ['Physical generator'], [config.generator_mode != 'geometric'])
         self.generator.active = config.coupled_flight
         self.generator.labels[0].set_fontsize(9)
-        self.figure.text(0.41, 0.9125, 'Off: geometric generator', fontsize=8)
+        self.generator_help = self.figure.text(0.41, 0.9125, 'Off: geometric generator', fontsize=8)
         self.generator.on_clicked(self.toggle_generator)
         self.backend = CheckButtons(self.figure.add_axes([0.62, 0.9025, 0.35, 0.025]),
                                     ['C++ construction (off: Python)'], [config.numerical_backend == 'cpp'])
@@ -62,7 +62,7 @@ class ScenarioEditor:
                                       "Arrival deadline (s) ", initial="Auto" if config.arrival_deadline is None else f"{config.arrival_deadline:g}")
         self.post_arrival_input = TextBox(self.figure.add_axes([0.66, 0.355, 0.06, 0.035]),
                                           "After arrival (s) ", initial=f"{config.post_arrival_time:g}")
-        self.figure.text(0.08, 0.335, "Horizon = total duration; Auto deadline = horizon minus post-arrival time.", fontsize=8)
+        self.timing_help = self.figure.text(0.08, 0.335, "Horizon = total duration; Auto deadline = horizon minus post-arrival time.", fontsize=8)
         self.spread_input = TextBox(self.figure.add_axes([0.85, 0.275, 0.11, 0.035]),
                                     "Approach spread (°) ", initial=f"{config.approach_spread_deg:g}")
         self.descent_input = TextBox(self.figure.add_axes([0.85, 0.135, 0.11, 0.035]),
@@ -116,8 +116,180 @@ class ScenarioEditor:
         self.reset_button.on_clicked(self.reset)
         self.start_button.on_clicked(self.start)
         self.figure.canvas.mpl_connect("button_press_event", self.click)
+        self._build_views()
         self.select(0)
         self.draw(fit=True)
+
+    def _build_views(self):
+        """Keep one set of controls and values behind two presentation views."""
+        from matplotlib.widgets import Button
+
+        self.advanced = False
+        self.figure.set_facecolor('white')
+        self.instructions.set_position((.055, .94))
+        self.instructions.set_text('Select a drone, target or obstacle, then click the map to position it.')
+        self.mission_button = Button(self.figure.add_axes([.055, .885, .13, .04]), 'Mission')
+        self.advanced_button = Button(self.figure.add_axes([.19, .885, .13, .04]), 'Advanced')
+        self.mission_button.on_clicked(lambda event: self.set_advanced(False))
+        self.advanced_button.on_clicked(lambda event: self.set_advanced(True))
+        self.view_help = self.figure.text(.34, .902, '', fontsize=10, color='#44546a')
+        self.engine_info = self.figure.text(.055, .855, '', fontsize=9, color='#44546a')
+        self.mission_summary = self.figure.text(.055, .195, '', fontsize=9, va='top',
+            linespacing=1.7, color='#334155')
+        self.selection_help = self.figure.text(.71, .235, '', fontsize=9, va='top',
+            linespacing=1.6, color='#44546a')
+        self._inputs = [self.x_input, self.y_input, self.altitude_input, self.heading_input,
+            self.speed_input, self.cruise_input, self.horizon_input, self.deadline_input,
+            self.post_arrival_input, self.spread_input, self.descent_input,
+            self.cruise_min_input, self.cruise_max_input, self.delay_min_input,
+            self.delay_max_input, self.radius_input, self.activation_input, self.profile_input]
+        self._view_widgets = [*self._inputs, self.generator, self.backend, self.auto_cruise,
+            self.common_altitude, self.loiter_direction, self.profile_button]
+        for widget in (self.horizon_input, self.deadline_input, self.post_arrival_input,
+                       self.spread_input, self.descent_input, self.cruise_min_input,
+                       self.cruise_max_input, self.delay_min_input, self.delay_max_input,
+                       self.activation_input):
+            widget.on_text_change(lambda text: self._update_summary())
+        self.start_button.color = '#215ea8'
+        self.start_button.hovercolor = '#17487f'
+        self.start_button.label.set_color('white')
+        self.start_button.ax.set_facecolor(self.start_button.color)
+
+    def set_advanced(self, enabled):
+        """Change presentation only; keep even invalid/unsubmitted input intact."""
+        for widget in self._inputs:
+            widget.stop_typing()
+        self.advanced = bool(enabled)
+        self._refresh_view()
+        self.figure.canvas.draw_idle()
+
+    @staticmethod
+    def _show_widget(widget, visible, position=None):
+        if widget is None:
+            return
+        if not visible and hasattr(widget, 'stop_typing'):
+            widget.stop_typing()
+        widget.ax.set_visible(visible)
+        if position is not None:
+            widget.ax.set_position(position)
+
+    def _refresh_view(self):
+        """Compose the view with selection-specific eligibility, without edits."""
+        drone = self.selected < len(self.snapshots)
+        obstacle = self.selected > len(self.snapshots)
+        for widget in self._view_widgets:
+            self._show_widget(widget, False)
+        for button, selected in ((self.mission_button, not self.advanced),
+                                 (self.advanced_button, self.advanced)):
+            button.color = '#dceafa' if selected else '#f3f5f8'
+            button.hovercolor = '#c8def6'
+            button.ax.set_facecolor(button.color)
+            button.label.set_color('#16487f' if selected else '#475569')
+        self.axis.set_position([.055, .59, .575, .25] if self.advanced else [.055, .255, .575, .585])
+        self.add_cylinder_button.ax.set_position([.71, .885, .12, .04])
+        self.add_box_button.ax.set_position([.84, .885, .125, .04])
+        self.remove_obstacle_button.ax.set_position([.71, .585, .255, .03])
+        self.remove_obstacle_button.ax.set_visible(obstacle)
+        for widget, position in ((self.fit_button, [.055, .055, .12, .04]),
+                (self.reset_button, [.20, .055, .12, .04]),
+                (self.apply_button, [.54, .055, .16, .04]),
+                (self.start_button, [.75, .055, .215, .04])):
+            widget.ax.set_position(position)
+        self.status.set_position((.055, .025))
+        self.status.set_fontsize(9)
+        self.generator_help.set_visible(False)
+        self.mission_summary.set_visible(not self.advanced)
+        self.selection_help.set_visible(not self.advanced)
+        self.timing_help.set_visible(self.advanced)
+        self.timing_help.set_position((.055, .505))
+        self.timing_help.set_text('Horizon includes recovery and onward flight. An explicit arrival deadline stays binding.')
+        self.wait_info.set_visible(self.advanced)
+        self.wait_info.set_position((.055, .352))
+        self.wait_info.set_fontsize(8)
+        self.capabilities.set_visible(self.advanced)
+        self.capabilities.set_position((.71, .13))
+        self.capabilities.set_verticalalignment('bottom')
+        self.capabilities.set_fontsize(9)
+        if self.advanced:
+            self.view_help.set_text('Timing, flight profiles and planner options')
+            positions = {
+                'horizon_input': [.155, .46, .10, .036],
+                'deadline_input': [.385, .46, .09, .036],
+                'post_arrival_input': [.57, .46, .075, .036],
+                'activation_input': [.155, .385, .10, .036],
+                'delay_min_input': [.385, .385, .09, .036],
+                'delay_max_input': [.57, .385, .075, .036],
+                'spread_input': [.155, .235, .10, .036],
+                'generator': [.055, .16, .27, .035],
+                'backend': [.36, .16, .285, .035],
+            }
+            if self.config.dimensions == 3:
+                positions.update(auto_cruise=[.055, .29, .22, .05],
+                    cruise_min_input=[.385, .31, .09, .036],
+                    cruise_max_input=[.57, .31, .075, .036],
+                    descent_input=[.385, .235, .09, .036],
+                    common_altitude=[.71, .35, .255, .04])
+            for name, position in positions.items():
+                self._show_widget(getattr(self, name), True, position)
+            if drone:
+                if self.config.dimensions == 3:
+                    self._show_widget(self.cruise_input, True, [.85, .54, .115, .036])
+                self._show_widget(self.radius_input, True, [.85, .475, .115, .036])
+                self._show_widget(self.loiter_direction, True, [.71, .41, .255, .04])
+                if self.config.coupled_flight and self.profile_loading:
+                    self._show_widget(self.profile_input, True, [.80, .295, .165, .036])
+                    self._show_widget(self.profile_button, True, [.71, .245, .255, .04])
+        else:
+            self.view_help.set_text('Position aircraft and destination')
+            fields = [self.x_input, self.y_input]
+            if self.altitude_input.active:
+                fields.append(self.altitude_input)
+            if drone or obstacle:
+                fields.append(self.heading_input)
+                if self.speed_input.active:
+                    fields.append(self.speed_input)
+            if obstacle:
+                fields.append(self.cruise_input)
+            for row, widget in enumerate(fields):
+                self._show_widget(widget, True, [.85, .54 - row*.055, .115, .036])
+        self._update_summary()
+        self._update_map_labels()
+
+    def _update_map_labels(self):
+        for artist, caption in getattr(self, '_drone_labels', ()):
+            artist.set_text(caption.split(' ·')[0] if self.advanced else caption)
+
+    def _update_summary(self):
+        """Display binding settings and pending text without parsing or retiming."""
+        deadline = self.deadline_input.text.strip()
+        deadline = 'none' if deadline.lower() in ('', 'auto') else deadline + ' s'
+        cruise = (f'{self.cruise_min_input.text}–{self.cruise_max_input.text} m'
+                  if self.config.cruise_altitude_range is not None else 'manual')
+        self.mission_summary.set_text(
+            f'Horizon {self.horizon_input.text} s · Initial loiter {self.activation_input.text} s · '
+            f'Extra wait {self.delay_min_input.text}–{self.delay_max_input.text} s\n'
+            f'Arrival deadline: {deadline} · Minimum after arrival: {self.post_arrival_input.text} s\n'
+            f'Cruise: {cruise} · Descent: {self.descent_input.text}° · Approach spread: {self.spread_input.text}°\n'
+            f'Separation: {self.config.separation:g} m · Target radius: {self.config.target_radius:g} m')
+        generator = 'Physical' if self.config.generator_mode != 'geometric' else 'Geometric'
+        backend = 'C++' if self.config.numerical_backend == 'cpp' else 'Python'
+        self.engine_info.set_text(f'{len(self.snapshots)} aircraft · {generator} planner · '
+            f'{backend} · D: drone, O: obstacle')
+        if self.selected < len(self.snapshots):
+            snapshot = self.snapshots[self.selected]
+            circle = holding_circle(snapshot.state, snapshot.speed)
+            orbit = (f'Initial circle: {circle[1]:g} m, ' +
+                     ('counterclockwise.' if snapshot.state[3] > 0 else 'clockwise.')) if circle else 'Straight initial flight.'
+            self.selection_help.set_text('The point is the aircraft position.\n' + orbit + '\nOrbit and cruise settings: Advanced.')
+        elif self.selected == len(self.snapshots):
+            self.selection_help.set_text('Click the map to position the target.\n' +
+                ('No shared target altitude; see Advanced.' if self.config.target_altitude is None and self.config.dimensions == 3
+                 else f'Arrival region radius: {self.config.target_radius:g} m.'))
+        else:
+            obstacle = self.config.obstacles[self.selected-len(self.snapshots)-1]
+            self.selection_help.set_text('Click the map to move the obstacle centre.\n' +
+                ('Cylinder: radius and half-height.' if obstacle.kind == 'cylinder'
+                 else 'Box size = twice each half-dimension.'))
 
     def toggle_generator(self, label=None):
         requested = 'physical_mission' if self.generator.get_status()[0] else 'geometric'
@@ -170,7 +342,7 @@ class ScenarioEditor:
             self.selector.ax.remove()
         self.selector_labels = ([f'Drone {s.drone_id}' for s in self.snapshots] + ['Target']
                                 + [f'Obstacle {i} · {o.kind}' for i, o in enumerate(self.config.obstacles)])
-        self.selector = RadioButtons(self.figure.add_axes([0.74, 0.70, 0.23, 0.20]), self.selector_labels,
+        self.selector = RadioButtons(self.figure.add_axes([0.71, 0.635, 0.255, 0.20]), self.selector_labels,
                                      active=min(self.selected, len(self.selector_labels)-1))
         for label in self.selector.labels:
             label.set_fontsize(8 if len(self.selector_labels) > 5 else 10)
@@ -220,8 +392,8 @@ class ScenarioEditor:
                 self._set_field(widget, f'{value:.12g}')
                 widget.set_active(True)
             for widget, value, label in (
-                    (self.heading_input, obstacle.half_extents[0], 'Radius / half-X (m) '),
-                    (self.speed_input, obstacle.half_extents[1], 'Half-Y (m) '),
+                    (self.heading_input, obstacle.half_extents[0], 'Radius (m) ' if obstacle.kind == 'cylinder' else 'Half-width X (m) '),
+                    (self.speed_input, obstacle.half_extents[1], 'Half-width Y (m) '),
                     (self.cruise_input, obstacle.half_extents[2], 'Half-height (m) ')):
                 widget.label.set_text(label)
                 self._set_field(widget, f'{value:.12g}')
@@ -231,6 +403,7 @@ class ScenarioEditor:
             self.profile_input.set_active(False)
             self.profile_button.set_active(False)
             self.capabilities.set_text('Obstacle: XYZ center and half-extents.\nCylinder: half-X = radius.\nClick the map to move its center.')
+            self._refresh_view()
             self.figure.canvas.draw_idle()
             return
         self.heading_input.label.set_text('Heading (°) ')
@@ -276,6 +449,7 @@ class ScenarioEditor:
             f'Bank: {local.limits.max_bank_deg:g}°; radius: {local.aircraft_radius:g} m\n'
             f'Vz: +{local.max_climb_rate:g} / −{local.descent_rate_limit:g} m/s'
             if local is not None else 'Target: shared mission settings.')
+        self._refresh_view()
         self.figure.canvas.draw_idle()
 
     def load_profile(self, event=None):
@@ -516,23 +690,28 @@ class ScenarioEditor:
         bounds = self.axis.get_xlim(), self.axis.get_ylim()
         self.wait_info.set_text(f'Extra wait after the initial loiter of {self.config.activation_time:g} s. '
                                 '0 / 0 = no extra wait.')
+        self._update_summary()
         self.axis.clear()
         from .obstacle_view import draw_obstacles_2d
-        draw_obstacles_2d(self.axis, self.config)
+        draw_obstacles_2d(self.axis, self.config, compact_labels=True)
+        self._drone_labels = []
         colors = plt.cm.tab10(np.linspace(0, 0.9, len(self.snapshots)))
-        for snapshot, color in zip(self.snapshots, colors):
+        for index, (snapshot, color) in enumerate(zip(self.snapshots, colors)):
             x, y, heading, _ = snapshot.state
             circle = holding_circle(snapshot.state, snapshot.speed)
             if circle is not None:
                 centre, radius = circle
                 self.axis.add_patch(plt.Circle(centre, radius, fill=False, color=color, ls=":"))
                 self.axis.plot(*centre, "+", color=color, alpha=0.5)
-            self.axis.plot(x, y, "o", color=color, ms=8)
+            self.axis.plot(x, y, "o", color=color, ms=9 if index == self.selected else 8,
+                           markeredgecolor='black' if index == self.selected else color)
             self.axis.quiver(x, y, np.cos(heading), np.sin(heading), color=color,
                              angles="xy", scale_units="xy", scale=0.1, width=0.006)
-            altitude_label = f" · z={snapshot.altitude:g} m" if self.config.dimensions == 3 else ""
-            self.axis.annotate(f"Drone {snapshot.drone_id} · {snapshot.speed:g} m/s{altitude_label}", (x, y), xytext=(7, 7),
-                               textcoords="offset points", color=color)
+            altitude_label = f" · {snapshot.altitude:g} m" if self.config.dimensions == 3 else ""
+            caption = f"D{snapshot.drone_id}{altitude_label}"
+            artist = self.axis.annotate(caption, (x, y), xytext=(7, 7),
+                                       textcoords="offset points", color=color, fontsize=9)
+            self._drone_labels.append((artist, caption))
         self.axis.add_patch(plt.Circle(self.target, self.config.target_radius, color="gold", alpha=0.35))
         self.axis.plot(*self.target, "kx", ms=12)
         assignments = approach_angles(self.snapshots, replace(self.config, target=self.target))
@@ -552,6 +731,7 @@ class ScenarioEditor:
         self.axis.set(xlabel="x (m)", ylabel="y (m)")
         self.axis.set_aspect("equal", adjustable="box")
         self.axis.grid(alpha=0.25)
+        self._update_map_labels()
         if fit:
             self.axis.margins(0.25)
             self.axis.autoscale_view()
@@ -564,6 +744,7 @@ class ScenarioEditor:
         self.figure.canvas.draw_idle()
 
     def reset(self, event=None):
+        self.advanced = False
         self.snapshots = list(self.original[0])
         self.target = self.original[1]
         self.config = self.original_config
