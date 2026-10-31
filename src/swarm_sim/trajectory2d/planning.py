@@ -44,6 +44,7 @@ class Config:
     flight_model: str = "point_mass"
     flight: FlightLimits = field(default_factory=FlightLimits)
     approach_assignment: str = "geometric"
+    approach_routing: str = "pursuit"  # Historical reference or explicit curvature-bounded tangent proposals.
     planning_workers: int = 1  # Safe serial default; explicit 0 selects automatic spawn workers.
     rollout_check_interval: int = 16  # Same endpoint checks, batched; 1 reproduces the reference path.
     planning_strategy: str = "fixed"  # Library compatibility; CLI defaults to adaptive.
@@ -156,6 +157,8 @@ class Config:
             raise ValueError("approach_spread_deg must be between 0 and 360 degrees")
         if self.approach_assignment not in ("geometric", "id"):
             raise ValueError("approach_assignment must be geometric or id")
+        if self.approach_routing not in ('pursuit', 'tangent'):
+            raise ValueError('approach_routing must be pursuit or tangent')
         if type(self.planning_workers) is not int or self.planning_workers < 0:
             raise ValueError("planning_workers must be a nonnegative integer (0 = auto)")
         if type(self.rollout_check_interval) is not int or self.rollout_check_interval < 1:

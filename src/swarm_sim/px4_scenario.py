@@ -41,6 +41,8 @@ def default_scenario(seed=7, obstacles=()):
 
 
 def validate_scenario(snapshots, config):
+    if config.approach_routing != 'pursuit':
+        raise ValueError('Shared PX4 scenarios do not yet persist tangent approach routing; use the point-mass launcher.')
     if len(snapshots) != 1 or snapshots[0].drone_id != 0:
         raise ValueError('Gazebo editor currently supports exactly one drone (ID 0).')
     snapshot = snapshots[0]

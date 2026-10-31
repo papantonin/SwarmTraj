@@ -93,6 +93,8 @@ def main():
                         help="Arrival-side spread around the destination: 0 keeps original routes; 360 distributes all around")
     parser.add_argument("--approach-assignment", choices=("geometric", "id"), default="geometric",
                         help="Assign entry sides by geometry (default); id reproduces the historical allocation")
+    parser.add_argument('--approach-routing', choices=('pursuit', 'tangent'), default='pursuit',
+                        help='Approach reference: historical point pursuit or bounded circle-line-circle tangent connection')
     parser.add_argument("--candidates", type=int, default=28)
     parser.add_argument("--attempts", type=int, default=90, help="Cumulative proposal limit per drone across all rounds")
     parser.add_argument("--planning-strategy", choices=("adaptive", "fixed"), default="adaptive",
@@ -308,6 +310,7 @@ def main():
                         separation=args.separation, clock_error=args.clock_bound,
                         position_error=args.position_bound, approach_spread_deg=args.approach_spread,
                         approach_assignment=args.approach_assignment,
+                        approach_routing=args.approach_routing,
                         min_extra_loiter=args.departure_delay[0], max_extra_loiter=args.departure_delay[1],
                         dimensions=args.dimensions, target_altitude=(
                             (30 if args.target_altitude is None else args.target_altitude)

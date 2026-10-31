@@ -30,6 +30,7 @@ struct Recipe {
     double speed, yaw_rate, cruise, release, minimum_hold, speed_end, heading, angle;
     double target_z, target_radius, position_error, latest_arrival;
     bool rich;
+    bool tangent_approach=false;
     Point gate, direction, normal, target;
     std::vector<double> levels, speed_reference, speed_derivative;
     std::vector<Point> waypoints;

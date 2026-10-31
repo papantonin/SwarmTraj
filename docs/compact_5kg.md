@@ -78,6 +78,15 @@ proposals remain 500–550 m, target `(3000, 0, 200)` m, ceiling 700 m and horiz
 The geometric assignment chooses which aircraft uses each direction; these
 horizontal approach directions are distinct from the 30-degree vertical slope.
 
+The launcher now selects `--approach-routing tangent`: a bounded circle-line-circle
+reference is constructed from the actual post-loiter pose, then followed by the
+same physical controller and independently validated. The historical `pursuit`
+mode remains explicit for comparison. This does not claim a globally shortest
+path or remove the aircraft's roll/turn constraints. On the matched four-aircraft
+175 km/h case, the outer transit durations fell from 124.2/121.8 s to 99.6/98.8 s;
+the full-horizon pair lower bound remained 195.04 m. See
+[the development record](trajectory_development.md).
+
 Own-rejection feedback is enabled. After at least two own alignment rejections,
 alternating proposals can move the approach join point 5–30 seconds of flight
 farther upstream. This is a bounded geometric proposal change, not extra time

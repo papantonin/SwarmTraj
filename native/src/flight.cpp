@@ -1,4 +1,5 @@
 #include "swarmtraj/flight.hpp"
+#include "swarmtraj/approach_path.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -199,12 +200,44 @@ Path prefix(const State& initial,const Parameters& p,const Recipe& r) {
         }
     }
     const auto transit=b.step();std::size_t waypoint=0,held=0;bool on_line=false;
+    std::vector<RouteSample> route;std::size_t cursor=0;
+    if(r.tangent_approach) {
+        if(b.step()>=r.steps)return b.fail("physical_transit_horizon");
+        const double cap=ceiling(b.state()[3],p);
+        if(cap<=1.)return b.fail("physical_tangent_turn_authority");
+        const double bank=.8*std::min(p.max_bank,std::acos(1./cap));
+        const double radius=b.state()[3]*b.state()[3]/(gravity*std::tan(bank));
+        std::array<double,3> pose{b.state()[0],b.state()[1],b.state()[4]};
+        for(std::size_t k=0;k<r.waypoints.size();++k) {
+            const auto& goal=r.waypoints[k];
+            const double heading=k+1==r.waypoints.size()?r.heading:
+                std::atan2(r.waypoints[k+1][1]-goal[1],r.waypoints[k+1][0]-goal[0]);
+            auto part=tangent_connection(pose,{goal[0],goal[1],heading},radius,
+                std::min(10.,b.state()[3]*p.dt),p.max_speed*(r.steps-b.step())*p.dt);
+            if(part.empty())return b.fail("physical_tangent_horizon");
+            const double offset=route.empty()?0.:route.back().distance;
+            if(route.size()+part.size()>1000000||offset+part.back().distance>p.max_speed*(r.steps-b.step())*p.dt)
+                return b.fail("physical_tangent_horizon");
+            for(std::size_t j=route.empty()?0:1;j<part.size();++j){part[j].distance+=offset;route.push_back(part[j]);}
+            pose={goal[0],goal[1],heading};
+        }
+    }
     while(b.step()<r.steps) {
         State s=b.state();held=settled(s,r.cruise)?held+1:0;
-        if(!on_line && distance_xy(s,r.waypoints[waypoint])<2*r.speed) {
+        if(!r.tangent_approach&&!on_line && distance_xy(s,r.waypoints[waypoint])<2*r.speed) {
             if(waypoint+1<r.waypoints.size())++waypoint;else on_line=true;
         }
-        double heading;
+        double heading,yaw_feedforward=0.;
+        if(r.tangent_approach&&!on_line) {
+            const auto end=std::min(route.size(),cursor+20);
+            double nearest=std::numeric_limits<double>::infinity();auto best=cursor;
+            for(std::size_t k=cursor;k<end;++k) {
+                const double distance=std::hypot(s[0]-route[k].x,s[1]-route[k].y);
+                if(distance<nearest){nearest=distance;best=k;}
+            }
+            cursor=best;
+            if(cursor+2>=route.size())on_line=true;
+        }
         if(on_line) {
             double cross=along(s,r.gate,r.normal),a=along(s,r.gate,r.direction);
             heading=r.heading-std::atan2(cross,1.5*r.speed);
@@ -214,8 +247,13 @@ Path prefix(const State& initial,const Parameters& p,const Recipe& r) {
                 if(std::abs(wrap(s[4]-r.heading))>.4*pi/180||std::abs(cross)>.5||!settled(s,r.cruise)||std::abs(s[3]-r.speed)>.05||held*p.dt<r.minimum_hold)return b.fail("physical_approach_alignment");
                 break;
             }
+        } else if(r.tangent_approach) {
+            const auto& point=route[cursor];
+            const double cross=-(s[0]-point.x)*std::sin(point.heading)+(s[1]-point.y)*std::cos(point.heading);
+            heading=point.heading-std::atan2(cross,1.5*r.speed);
+            yaw_feedforward=s[3]*std::cos(s[5])*point.curvature;
         } else heading=std::atan2(r.waypoints[waypoint][1]-s[1],r.waypoints[waypoint][0]-s[0]);
-        if(!b.append(guidance(s,reference(s,r.speed,r.cruise,heading,p),0.,0.,p)))return b.fail("physical_transit_envelope");
+        if(!b.append(guidance(s,reference(s,r.speed,r.cruise,heading,p),yaw_feedforward,0.,p)))return b.fail("physical_transit_envelope");
     }
     if(b.step()>=r.steps)return b.fail("physical_transit_horizon");
     b.phase("transit",transit);

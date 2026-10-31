@@ -40,6 +40,7 @@ struct PlanningSettings:ValidationSettings {
     double separation=8.,detour=45.,level_hold=3.,cell_size=20.,post_arrival=5.,horizon=90.,max_path_degrees=45.;
     // Proposal-only extension after own alignment rejection; never a timing allowance.
     double approach_lead_extra_s=0.;
+    bool tangent_approach=false;
     std::optional<double> deadline;
     bool spatial=false,adaptive=false,mrv=false,max_margin=false,witnesses=false;
     bool reservations=false,windows=false,mixed=false,rejection_feedback=false,id_approach=false;

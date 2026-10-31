@@ -35,7 +35,8 @@ def options(config):
         'witnesses': config.conflict_guidance == 'witness', 'reservations': config.reservation_policy == 'grid',
         'windows': config.interval_guidance == 'safe_windows', 'mixed': config.profile_policy == 'adaptive_mixed',
         'rejection_feedback': config.candidate_guidance == 'rejections',
-        'id_approach': config.approach_assignment == 'id'}
+        'id_approach': config.approach_assignment == 'id',
+        'tangent_approach': config.approach_routing == 'tangent'}
 
 
 def designation(snapshot):

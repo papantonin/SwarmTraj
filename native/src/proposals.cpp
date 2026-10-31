@@ -164,6 +164,7 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     }
     r.yaw_rate=s.yaw_rate;r.release=release;r.minimum_hold=hold.value_or(c.level_hold);r.speed_end=speed_end;
     r.heading=heading;r.latest_arrival=c.latest_arrival;r.rich=c.cruise_levels>1||c.smooth_speed;
+    r.tangent_approach=c.tangent_approach;
     r.gate=gate;r.direction=direction;r.normal=normal;r.target=c.target;r.levels=levels;
     r.speed_reference=speed;r.speed_derivative=speed_derivative;r.waypoints=waypoints;
     auto first=prefix(s.initial,c.physics,r);if(!first.accepted())return {{},first.rejection};
