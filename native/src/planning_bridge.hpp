@@ -43,6 +43,9 @@ inline PlanningSettings planning_settings(PyObject* d,const Parameters& p) {
     c.horizon=real(d,"horizon");
     c.max_path_degrees=real(d,"max_path_degrees");
     if(auto* option=PyDict_GetItemString(d,"tangent_approach"))c.tangent_approach=boolean(option);
+    if(auto* option=PyDict_GetItemString(d,"efficient"))c.efficient=boolean(option);
+    if(auto* option=PyDict_GetItemString(d,"efficiency_slack_cap"))c.efficiency_slack_cap=number(option);
+    if(c.efficiency_slack_cap<0.)throw std::invalid_argument("negative efficiency slack cap");
     for(const auto& item:{std::pair{"spatial",&c.spatial},{"adaptive",&c.adaptive},{"mrv",&c.mrv},{"max_margin",&c.max_margin},{"witnesses",&c.witnesses},
         {"reservations",&c.reservations},{"windows",&c.windows},{"mixed",&c.mixed},{"rejection_feedback",&c.rejection_feedback},{"id_approach",&c.id_approach}})*item.second=boolean(get(d,item.first));
     auto* seed=get(d,"seed_words");if(!PyList_Check(seed)||PyList_Size(seed)>100000)throw std::invalid_argument("invalid seed words");c.seed.clear();

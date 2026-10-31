@@ -140,6 +140,7 @@ MissionResult run(std::vector<Designation> snapshots,std::vector<PlanningSetting
             ||c.detour!=common.detour||c.level_hold!=common.level_hold||c.cell_size!=common.cell_size||c.post_arrival!=common.post_arrival
             ||c.deadline!=common.deadline||c.spatial!=common.spatial||c.adaptive!=common.adaptive||c.mrv!=common.mrv
             ||c.max_margin!=common.max_margin||c.witnesses!=common.witnesses||c.reservations!=common.reservations
+            ||c.tangent_approach!=common.tangent_approach||c.efficient!=common.efficient||c.efficiency_slack_cap!=common.efficiency_slack_cap
             ||c.windows!=common.windows||c.mixed!=common.mixed||c.rejection_feedback!=common.rejection_feedback||c.id_approach!=common.id_approach)
             throw std::invalid_argument("shared mission settings must match across aircraft");
     }
@@ -173,8 +174,8 @@ MissionResult run(std::vector<Designation> snapshots,std::vector<PlanningSetting
         if(plans||search.exhausted||!c.adaptive||std::any_of(current.begin(),current.end(),[](auto n){return n==0;}))break;
         indices=search.expansion_indices(catalogs,snapshots);if(indices.empty())break;
     }
-    Value selection=object({{"policy",c.max_margin?"max_margin":"first"}});
-    if(plans&&c.max_margin) {
+    Value selection=object({{"policy",c.efficient?"efficient":c.max_margin?"max_margin":"first"}});
+    if(plans&&(c.max_margin||c.efficient)) {
         const auto initial_plans=*plans;const auto initial_score=search.score(*plans);Value::Array steps;std::vector<long long> expanded;
         for(std::size_t round=0;round<=c.margin_rounds;++round) {
             auto start=Clock::now();auto [chosen,quality]=search.refine(domains(catalogs),*plans);const double seconds=elapsed(start);
@@ -185,8 +186,10 @@ MissionResult run(std::vector<Designation> snapshots,std::vector<PlanningSetting
             generate(indices,&*plans,"margin");expanded=drone_ids(indices);
         }
         const auto final_score=search.score(*plans);
-        selection["objective"]="leximin_pairwise_robust_slack";selection["steps"]=steps;
-        selection["initial_sorted_slack_m"]=values(initial_score);selection["selected_sorted_slack_m"]=values(final_score);selection["improved"]=final_score>initial_score;
+        selection["objective"]=c.efficient?"capped_slack_then_duration_distance":"leximin_pairwise_robust_slack";selection["steps"]=steps;
+        selection["initial_sorted_slack_m"]=values(initial_score);selection["selected_sorted_slack_m"]=values(final_score);
+        selection["improved"]=c.efficient?search.efficiency_score(*plans)>search.efficiency_score(initial_plans):final_score>initial_score;
+        if(c.efficient){selection["initial_efficiency_score"]=values(search.efficiency_score(initial_plans));selection["selected_efficiency_score"]=values(search.efficiency_score(*plans));selection["slack_cap_m"]=c.efficiency_slack_cap;}
         selection["initial_candidate_ids"]=values(candidate_ids(initial_plans));selection["selected_candidate_ids"]=values(candidate_ids(*plans));
         selection["initial_pairs"]=search.pair_scores(initial_plans);selection["selected_pairs"]=search.pair_scores(*plans);
         selection["expansion_rounds"]=steps.size()-1;selection["optimization_nodes"]=search.optimization_nodes;

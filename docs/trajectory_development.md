@@ -40,10 +40,41 @@ Python checks passed, including independent selected-plan replay, point-mass
 execution and exact serial/spawn plan agreement. The before/after JSON missions
 are retained. These measurements describe this scenario, not guaranteed gains.
 
+## 2. Duration/distance ranking after preferred slack
+
+The explicit `selection_policy=efficient` ranks compatible selections by:
+
+1. Minimum extra robust pair slack, capped at `efficiency_slack_cap_m`.
+2. Earliest latest arrival (makespan).
+3. Smallest sum of arrival times.
+4. Smallest sampled 3D travel distance up to each arrival, including initial loiter.
+
+The default cap is 20 m. It is a soft ranking preference, not a new safety bound
+or permission to change required separation. If no selection reaches the cap,
+the best available minimum slack still ranks first and the result records that
+the cap was not reached. Independent acceptance checks and margins are unchanged.
+`max_margin` and `first` retain their original behavior. The compact launcher
+explicitly selects the new policy; other defaults remain unchanged.
+
+C++ caches own-candidate costs and uses admissible optimistic bounds in the
+bounded search. An independent exhaustive Python oracle checks small catalogs.
+The shared search-node/refinement budgets still apply, including to a single
+aircraft; incomplete optimization preserves a verified incumbent. Serial/spawn
+plan equality and full point-mass execution are checked separately.
+
+On the matched tangent-routing case, the last arrival moved from 138.4 to
+134.0 s. The minimum extra robust slack decreased from 165.78 to 58.73 m,
+remaining above the selected 20 m ranking cap. This is an explicit tradeoff
+between preferred surplus slack and duration, not a safety-margin relaxation.
+The result is optimal only within the explored finite catalog when budgets
+permit, not in continuous trajectory space.
+
+Native planning/catalog/search capabilities are version 2; stale extensions
+fail with rebuild instructions rather than silently ignoring the new options.
+The integrated suite passed 1,075 tests and all seven standalone C++ tests.
+
 ## Remaining ordered work
 
-2. Rank duration/distance among trajectories with sufficient preferred robust
-   slack, preserving the mandatory acceptance bounds.
 3. Integrate phase-dependent operating speeds and validate their transitions.
 4. Expand numerical and mission qualification, retaining failed trials.
 5. Extend PX4/Gazebo only with an explicit native airframe and separately checked

@@ -104,6 +104,7 @@ PyObject* swarm_search_call(PyObject*,PyObject* args) {
             else if(op=="compatible")result=state.search.compatible(*plans[0],*plans[1]);
             else if(op=="margin")result=state.search.margin(*plans[0],*plans[1]);
             else if(op=="score")result=values(state.search.score(plans));
+            else if(op=="efficiency_score")result=values(state.search.efficiency_score(plans));
             else if(op=="pair_scores")result=state.search.pair_scores(plans);
             else if(op=="optimization_available")result=state.search.optimization_available();
             else if(op=="expansion_indices")result=values(state.search.expansion_indices(catalogs,snapshots));

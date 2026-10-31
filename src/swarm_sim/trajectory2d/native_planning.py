@@ -31,7 +31,8 @@ def options(config):
         'horizon': float(config.horizon),
         'max_path_degrees': float(config.flight.max_flight_path_deg),
         'spatial': config.obstacle_routing == 'spatial', 'adaptive': config.planning_strategy == 'adaptive',
-        'mrv': config.search_order == 'mrv', 'max_margin': config.selection_policy == 'max_margin',
+        'mrv': config.search_order == 'mrv', 'max_margin': config.selection_policy in ('max_margin','efficient'),
+        'efficient': config.selection_policy=='efficient','efficiency_slack_cap':float(config.efficiency_slack_cap_m),
         'witnesses': config.conflict_guidance == 'witness', 'reservations': config.reservation_policy == 'grid',
         'windows': config.interval_guidance == 'safe_windows', 'mixed': config.profile_policy == 'adaptive_mixed',
         'rejection_feedback': config.candidate_guidance == 'rejections',
@@ -116,7 +117,7 @@ def restore_catalog_types(record):
 
 def require_planner():
     module=native.require_native()
-    if module.build_info().get('planning_api') != 1:
+    if module.build_info().get('planning_api') != 2:
         raise RuntimeError('complete native planner unavailable; rebuild with ./scripts/build_native.sh')
     return module
 
@@ -192,7 +193,7 @@ def extend_catalog(task):
     from .production import require_production
     require_production(config)
     module=native.require_native()
-    if module.build_info().get('catalog_api') != 1:
+    if module.build_info().get('catalog_api') != 2:
         raise RuntimeError('native catalog kernel unavailable; rebuild with ./scripts/build_native.sh')
     if config.generator_mode not in ('physical_mission','physical_recovery_seed'):
         raise ValueError('native catalogs require physical mission generation')
@@ -230,7 +231,7 @@ class NativeJointSearch:
     def __init__(self,config):
         self.config=config
         self._module=native.require_native()
-        if self._module.build_info().get('search_api') != 1:
+        if self._module.build_info().get('search_api') != 2:
             raise RuntimeError('native search kernel unavailable; rebuild with ./scripts/build_native.sh')
         base=config.for_drone(config.aircraft_profiles[0][0]) if config.aircraft_profiles else config
         own=[(int(identifier),options(config.for_drone(identifier)),native.parameters(config.for_drone(identifier)))
@@ -279,6 +280,7 @@ class NativeJointSearch:
     def compatible(self,first,second):return self._call('compatible',plans=self._plans((first,second)))
     def margin(self,first,second):return self._call('margin',plans=self._plans((first,second)))
     def score(self,plans):return tuple(self._call('score',plans=self._plans(plans)))
+    def efficiency_score(self,plans):return tuple(self._call('efficiency_score',plans=self._plans(plans)))
     def pair_scores(self,plans):return self._call('pair_scores',plans=self._plans(plans))
     def optimization_available(self):return self._call('optimization_available')
     def diagnostics(self):return self._call('diagnostics')

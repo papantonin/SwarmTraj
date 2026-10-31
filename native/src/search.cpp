@@ -84,6 +84,27 @@ Value JointSearch::pair_scores(const Domain& plans) {
         result.push_back(object({{"drone_ids",array({plans[a]->drone_id,plans[b]->drone_id})},{"extra_margin_m",margin(*plans[a],*plans[b])}}));
     return result;
 }
+std::array<double,2> JointSearch::cost(const Candidate& path) {
+    const std::array<long long,2> key{path.drone_id,path.candidate_id};
+    if(auto found=costs_.find(key);found!=costs_.end())return found->second;
+    if(!std::isfinite(path.arrival)||path.arrival<0||path.projected.empty()||path.dt<=0)
+        throw std::invalid_argument("invalid candidate efficiency metadata");
+    const double end=std::min(path.arrival/path.dt,static_cast<double>(path.projected.size()-1));
+    const auto full=static_cast<std::size_t>(std::floor(end));double length=0.;
+    auto step=[&](std::size_t k){const auto& a=path.projected[k-1];const auto& b=path.projected[k];
+        return std::sqrt((b[0]-a[0])*(b[0]-a[0])+(b[1]-a[1])*(b[1]-a[1])+(b[4]-a[4])*(b[4]-a[4]));};
+    for(std::size_t k=1;k<=full;++k)length+=step(k);
+    if(full+1<path.projected.size())length+=(end-full)*step(full+1);
+    if(!std::isfinite(length))throw std::invalid_argument("nonfinite candidate efficiency cost");
+    return costs_.emplace(key,std::array<double,2>{path.arrival,length}).first->second;
+}
+std::vector<double> JointSearch::efficiency_score(const Domain& plans) {
+    if(!std::isfinite(config_.efficiency_slack_cap)||config_.efficiency_slack_cap<0)
+        throw std::invalid_argument("invalid efficiency slack cap");
+    const auto slack=score(plans);double latest=0.,total=0.,distance=0.;
+    for(auto* p:plans){const auto c=cost(*p);latest=std::max(latest,c[0]);total+=c[0];distance+=c[1];}
+    return {slack.empty()?config_.efficiency_slack_cap:std::min(slack.front(),config_.efficiency_slack_cap),-latest,-total,-distance};
+}
 std::optional<Domain> JointSearch::solve(const Domains& catalogs) {
     if(std::any_of(catalogs.begin(),catalogs.end(),[](const auto& d){return d.empty();}))return {};
     std::function<std::optional<Domain>(Domain,const Domains&)> visit;
@@ -106,6 +127,38 @@ std::optional<Domain> JointSearch::solve(const Domains& catalogs) {
 }
 bool JointSearch::optimization_available() const {return nodes<config_.max_nodes&&optimization_nodes<config_.margin_nodes;}
 std::pair<Domain,Value> JointSearch::refine(const Domains& catalogs,const Domain& incumbent) {
+    if(config_.efficient) {
+        Domain best=incumbent;auto best_score=efficiency_score(best);bool complete=true;std::size_t improvements=0;
+        std::function<void(Domain,const Domains&)> visit;
+        visit=[&](Domain selected,const Domains& domains) {
+            auto upper=efficiency_score(selected);
+            for(const auto& domain:domains) {
+                double earliest=std::numeric_limits<double>::infinity(),shortest=earliest;
+                for(auto* p:domain){auto c=cost(*p);earliest=std::min(earliest,c[0]);shortest=std::min(shortest,c[1]);}
+                upper[1]=std::min(upper[1],-earliest);upper[2]-=earliest;upper[3]-=shortest;
+            }
+            if(upper<=best_score)return;
+            if(domains.empty()){best=ordered(std::move(selected));best_score=std::move(upper);++improvements;return;}
+            const auto index=choose(domains,config_.mrv);Domains others=domains;others.erase(others.begin()+index);
+            auto candidates=domains[index];
+            std::stable_sort(candidates.begin(),candidates.end(),[&](auto* a,auto* b){return cost(*a)<cost(*b);});
+            for(auto* candidate:candidates) {
+                bool acceptable=true;for(auto* previous:selected)if(!compatible(*candidate,*previous)){acceptable=false;break;}
+                if(!acceptable)continue;
+                if(!optimization_available()){complete=false;optimization_budget_exhausted=true;return;}
+                ++nodes;++optimization_nodes;Domains remaining;bool viable=true;
+                for(const auto& domain:others) {
+                    Domain filtered;for(auto* future:domain)if(compatible(*candidate,*future))filtered.push_back(future);
+                    if(filtered.empty()){viable=false;break;}remaining.push_back(std::move(filtered));
+                }
+                if(viable){auto next=selected;next.push_back(candidate);visit(std::move(next),remaining);if(!complete)return;}
+            }
+        };
+        visit({},catalogs);
+        return {best,object({{"catalog_optimal",complete},{"improvements",improvements},{"optimization_nodes",optimization_nodes},
+            {"sorted_slack_m",values(score(best))},{"efficiency_score",values(best_score)},
+            {"slack_cap_m",config_.efficiency_slack_cap},{"slack_cap_reached",best_score[0]>=config_.efficiency_slack_cap}})};
+    }
     Domain best=incumbent;auto best_score=score(incumbent);const auto pair_count=best_score.size();bool complete=true;std::size_t improvements=0;
     std::function<void(Domain,const Domains&,std::vector<double>)> visit;
     visit=[&](Domain selected,const Domains& domains,std::vector<double> margins) {

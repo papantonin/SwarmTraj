@@ -53,6 +53,7 @@ class Config:
     obstacles: tuple[Obstacle, ...] = ()
     obstacle_clearance: float = 5.0
     selection_policy: str = "first"  # Library compatibility; CLI prefers robust margins.
+    efficiency_slack_cap_m: float = 20.  # Ranking saturation only; never changes required separation.
     margin_search_nodes: int = 2000
     margin_expansion_rounds: int = 1
     arrival_deadline: float | None = None  # Absolute mission time; None adds no separate deadline.
@@ -171,8 +172,11 @@ class Config:
             raise ValueError("obstacles must be a tuple of validated Obstacle objects")
         if not np.isfinite(self.obstacle_clearance) or self.obstacle_clearance < 0:
             raise ValueError("obstacle_clearance must be finite and nonnegative")
-        if self.selection_policy not in ("first", "max_margin"):
-            raise ValueError("selection_policy must be first or max_margin")
+        if self.selection_policy not in ("first", "max_margin", "efficient"):
+            raise ValueError("selection_policy must be first, max_margin or efficient")
+        if (type(self.efficiency_slack_cap_m) not in (int,float) or not np.isfinite(self.efficiency_slack_cap_m)
+                or self.efficiency_slack_cap_m<0):
+            raise ValueError('efficiency_slack_cap_m must be finite and nonnegative')
         if type(self.margin_search_nodes) is not int or self.margin_search_nodes < 1:
             raise ValueError("margin_search_nodes must be a positive integer")
         if type(self.margin_expansion_rounds) is not int or self.margin_expansion_rounds < 0:
@@ -725,7 +729,7 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
 
     optimization_s = 0.0
     selection = {"policy": config.selection_policy}
-    if plans is not None and config.selection_policy == "max_margin":
+    if plans is not None and config.selection_policy in ("max_margin", "efficient"):
         initial_plans = plans
         initial_score = search.score(plans)
         steps = []
@@ -769,6 +773,12 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
                           "optimization_nodes": search.optimization_nodes,
                           "optimization_budget_exhausted": search.optimization_budget_exhausted,
                           "catalog_optimal": steps[-1]["catalog_optimal"]})
+        if config.selection_policy=='efficient':
+            initial_efficiency=search.efficiency_score(initial_plans)
+            selected_efficiency=search.efficiency_score(plans)
+            selection.update(objective='capped_slack_then_duration_distance',
+                initial_efficiency_score=list(initial_efficiency),selected_efficiency_score=list(selected_efficiency),
+                improved=selected_efficiency>initial_efficiency,slack_cap_m=config.efficiency_slack_cap_m)
 
     diagnostic = {"strategy": config.planning_strategy, "search_order": config.search_order,
                   "conflict_guidance": config.conflict_guidance,

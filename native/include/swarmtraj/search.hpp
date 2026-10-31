@@ -31,6 +31,7 @@ class JointSearch {
     std::map<std::array<long long,2>,PairMetrics> pairs_;
     std::map<std::array<long long,2>,Witness> witnesses_;
     std::map<std::array<long long,2>,Occupancy> occupancies_;
+    std::map<std::array<long long,2>,std::array<double,2>> costs_;
     std::optional<ReservationConflict> first_reservation_;
     std::size_t cache_hits_=0,reservation_conflicts_=0;
 public:
@@ -43,6 +44,8 @@ public:
     bool compatible(const Candidate&,const Candidate&);
     double margin(const Candidate&,const Candidate&);
     std::vector<double> score(const Domain&);
+    std::array<double,2> cost(const Candidate&);
+    std::vector<double> efficiency_score(const Domain&);
     Value pair_scores(const Domain&);
     std::optional<Domain> solve(const Domains&);
     bool optimization_available() const;

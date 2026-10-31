@@ -111,8 +111,10 @@ def main():
                         help="Initial catalog size and expansion batch in adaptive mode")
     parser.add_argument("--search-order", choices=("mrv", "id"), default="mrv",
                         help="Search the smallest remaining domain first (default), or historical ID order")
-    parser.add_argument("--selection-policy", choices=("max_margin", "first"), default="max_margin",
-                        help="Prefer combinations with greater robust separation margin (default), or first feasible")
+    parser.add_argument("--selection-policy", choices=("max_margin", "first", "efficient"), default="max_margin",
+                        help="Prefer robust margin (default), first feasible, or duration/distance after capped extra slack")
+    parser.add_argument('--efficiency-slack-cap',type=float,default=20.,metavar='M',
+                        help='Extra robust slack at which efficient ranking saturates; does not change required separation')
     parser.add_argument("--margin-search-nodes", type=int, default=2000,
                         help="Extra refinement-node cap, also limited by max-search-nodes; retain best feasible plan")
     parser.add_argument("--margin-expansion-rounds", type=int, default=1,
@@ -303,6 +305,7 @@ def main():
                         speed_profile_acceleration=args.speed_profile_acceleration,
                         search_order=args.search_order,
                         selection_policy=args.selection_policy, margin_search_nodes=args.margin_search_nodes,
+                        efficiency_slack_cap_m=args.efficiency_slack_cap,
                         margin_expansion_rounds=args.margin_expansion_rounds,
                         max_search_nodes=args.max_search_nodes, activation_time=args.activation_time,
                         planning_workers=1 if args.workers is None else args.workers,

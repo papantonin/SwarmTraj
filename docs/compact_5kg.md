@@ -87,6 +87,13 @@ path or remove the aircraft's roll/turn constraints. On the matched four-aircraf
 the full-horizon pair lower bound remained 195.04 m. See
 [the development record](trajectory_development.md).
 
+The launcher also selects `--selection-policy efficient --efficiency-slack-cap 20`.
+Extra robust slack is preferred up to 20 m, then selections are ranked by latest
+arrival, summed arrival times and sampled distance. This cap is a soft preference;
+mandatory separation and validation limits are unchanged. The selected minimum
+extra slack was 58.73 m and the last arrival 134.0 s in the matched case, compared
+with 165.78 m and 138.4 s under margin-only selection with tangent routing.
+
 Own-rejection feedback is enabled. After at least two own alignment rejections,
 alternating proposals can move the approach join point 5–30 seconds of flight
 farther upstream. This is a bounded geometric proposal change, not extra time

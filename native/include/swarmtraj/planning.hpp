@@ -41,6 +41,8 @@ struct PlanningSettings:ValidationSettings {
     // Proposal-only extension after own alignment rejection; never a timing allowance.
     double approach_lead_extra_s=0.;
     bool tangent_approach=false;
+    bool efficient=false;
+    double efficiency_slack_cap=20.;
     std::optional<double> deadline;
     bool spatial=false,adaptive=false,mrv=false,max_margin=false,witnesses=false;
     bool reservations=false,windows=false,mixed=false,rejection_feedback=false,id_approach=false;

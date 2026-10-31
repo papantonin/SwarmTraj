@@ -24,5 +24,12 @@ int main() {
     require(!grid.compatible(a,overlap),"closed grid overlap accepted");
     bool rejected=false;try{grid.verify({&a,&overlap});}catch(const std::runtime_error&){rejected=true;}
     require(rejected,"independent reservation check trusted cached selection");
+    c.reservations=false;c.efficient=true;
+    auto slow=make(0,10,0),fast=make(0,11,0),other=make(1,0,60);slow.arrival=3.;
+    Domains options{{&slow,&fast},{&other}};JointSearch efficient(c);
+    auto initial=efficient.solve(options);require(initial.has_value(),"efficiency initial selection failed");
+    auto [shorter,info]=efficient.refine(options,*initial);
+    require(shorter[0]->candidate_id==11,"efficiency objective did not improve makespan");
+    efficient.verify(shorter);
     std::cout<<"native joint search and independent verification tests passed\n";
 }

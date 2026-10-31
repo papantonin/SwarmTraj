@@ -53,7 +53,7 @@ def test_native_invalid_input_and_missing_capability_fail_before_computation(mon
     with pytest.raises(ValueError,match='at least one'):plan_mission((),c)
     with pytest.raises(ValueError,match='unique'):plan_mission((s,s),c)
     class Old:
-        def build_info(self):return {'abi':1,'catalog_api':1}
+        def build_info(self):return {'abi':1,'planning_api':1,'catalog_api':1,'search_api':1}
     monkeypatch.setattr(native.native,'require_native',lambda:Old())
     with pytest.raises(RuntimeError,match='rebuild'):plan_mission((s,),c)
 
