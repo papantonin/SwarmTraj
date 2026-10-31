@@ -20,6 +20,13 @@ including initial loiter, actual target passage, recovery and onward flight.
 Every candidate receives independent physical validation before joint selection,
 followed by independent final separation, reservation and obstacle rechecks.
 
+Opt-in `--candidate-guidance rejections` also handles repeated own approach
+alignment failures: bounded proposals extend the approach join distance by
+5–30 seconds of nominal flight. This does not extend the horizon/deadline or
+weaken the sector/angle, physical, obstacle or joint checks. The
+[compact four-aircraft example](compact_5kg.md) uses this option with a
+180-degree arrival-side spread at 175 km/h.
+
 The CLI uses adaptive catalogs, MRV ordering, witness-guided expansion and
 margin-preferring selection. Candidate budgets and safety limits are never
 relaxed. Explicit workers use deterministic spawn processes; every numerical

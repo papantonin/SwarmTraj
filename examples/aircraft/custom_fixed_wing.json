@@ -1,0 +1,40 @@
+{
+  "schema": "swarm-aircraft-profile-v3",
+  "model": "coordinated_point_mass_v1",
+  "unit_system": "SI",
+  "name": "custom_fixed_wing_example",
+  "description": "Editable illustrative 2.5 kg powered fixed-wing example. Replace all parameters with data for your aircraft. No airbrake; not calibrated and not a Gazebo model.",
+  "calibration_status": "illustrative",
+  "geometry": {"bounding_radius_m": 1.5},
+  "speeds": {
+    "loiter_airspeed_m_s": 10,
+    "climb_airspeed_m_s": 11,
+    "cruise_airspeed_m_s": 12,
+    "descent_airspeed_m_s": 12,
+    "dive_airspeed_m_s": 15
+  },
+  "airframe": {
+    "mass_kg": 2.5,
+    "wing_area_m2": 0.6,
+    "air_density_kg_m3": 1.225,
+    "zero_lift_drag_coefficient": 0.035,
+    "induced_drag_factor": 0.06,
+    "max_lift_coefficient": 1.4,
+    "max_thrust_n": 14,
+    "max_airbrake_drag_n": 0
+  },
+  "limits": {
+    "min_airspeed_m_s": 8,
+    "max_airspeed_m_s": 16,
+    "max_bank_deg": 50,
+    "max_roll_rate_deg_s": 60,
+    "stall_margin": 1.15,
+    "min_load_factor": 0.2,
+    "max_load_factor": 2.5,
+    "max_flight_path_deg": 45,
+    "max_flight_path_rate_deg_s": 8,
+    "max_climb_rate_m_s": 3,
+    "max_descent_rate_m_s": 3,
+    "max_vertical_acceleration_m_s2": 1
+  }
+}

@@ -1,0 +1,67 @@
+// Same component graph as docs/architecture.md; update both together.
+digraph SwarmTraj {
+graph [rankdir=TB, newrank=true, bgcolor="white", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="SwarmTraj architecture | 2026-10-30\nRequired C++ engine, Python interface and independent audits", nodesep=0.3, ranksep=0.5, pad=0.25];
+node [shape=box, style="rounded,filled", fillcolor="white", color="#546575", fontname="DejaVu Sans", fontsize=11, margin="0.12,0.09"];
+edge [color="#526576", fontname="DejaVu Sans", fontsize=9, arrowsize=0.7];
+subgraph cluster_inputs {
+label="PYTHON | Mission and aircraft inputs"; fontsize=13; style="rounded,filled"; fillcolor="#e8f2fb"; color="#bac5ce";
+Request [label="Python editor / CLI: fixed snapshot,\ntarget, timing, obstacles",shape=box];
+Profiles [label="Aircraft JSON v1/v2 normalized or v3 mass,\nwing, polar, forces and operating speeds",shape=box];
+Bind [label="Python: strict input checks, SI conversion,\nprofile identity and own physics",shape=box];
+Policy [label="Supported\nproduction\nrequest?",shape=diamond];
+Archive [label="Retired modes: inspect only; explicit\nmigration to a new scenario",shape=box];
+}
+subgraph cluster_planning {
+label="C++20 | Offline planning and full-horizon validation"; fontsize=13; style="rounded,filled"; fillcolor="#e8f5ec"; color="#bac5ce";
+Proposals [label="C++ physical proposals: loiter, levels,\ntransit, approach, passage, pull-out,\nrecovery",shape=box];
+Validate [label="C++ independent individual replay: full\nhorizon, envelope, contact and obstacles",shape=box];
+Catalogs [label="C++ reproducible per-drone catalogs; Python\nspawn scheduling if requested",shape=box];
+Search [label="C++ bounded joint selection: pair\ndistances, clock/tracking margins, optional\nreservations",shape=box];
+Recheck [label="C++ independent final joint recheck;\nimmutable original mission",shape=box];
+Failure [label="Explicit input rejection, catalog\nexhaustion or search budget diagnostic",shape=box];
+OwnPlan [label="Export: each aircraft receives only its own\nplan and own profile",shape=box];
+}
+subgraph cluster_local {
+label="POINT-MASS EXECUTION | Own aircraft only"; fontsize=13; style="rounded,filled"; fillcolor="#e8f2fb"; color="#bac5ce";
+Local [label="C++ own-reference sampling, local tracking,\nwind estimation and held-control protection",shape=box];
+Motion [label="C++ simulated motion; Python own-clock\nevents and synthetic sensors",shape=box];
+Audit [label="Python independent observer: physical\nenvelope, tracking, contact, obstacles and\nseparation",shape=box];
+}
+subgraph cluster_gazebo {
+label="OPTIONAL PX4 / GAZEBO | Separate model and acceptance"; fontsize=13; style="rounded,filled"; fillcolor="#fff2df"; color="#bac5ce";
+Gate [label="PX4 adapter gate: pinned Cessna proxy, 1 or\n4 aircraft, bounded scene",shape=box];
+Spatial [label="Python: derived spatial waypoints and SDF;\nno timing/separation certificate transfer",shape=box];
+Runtime [label="Isolated Gazebo world and independent PX4\ninstances; readiness and bounded warm-start\ngates",shape=box];
+Flight [label="PX4 own-aircraft control; Gazebo\naerodynamics, sensors and collisions",shape=box];
+Completion [label="Observer-only measurements; land or\nacknowledged and verified own-model removal",shape=box];
+}
+Results [label="Python reports, telemetry, hashes, plots and 3D\nplayback",fillcolor="#edf0f4"];
+{rank=same;Local;Gate;}
+Request -> Bind;
+Profiles -> Bind;
+Bind -> Policy;
+Policy -> Archive [label="retired request"];
+Archive -> Request [label="new explicit request", style=dashed, constraint=false];
+Policy -> Proposals [label="physical C++"];
+Proposals -> Validate;
+Validate -> Catalogs [label="accepted"];
+Validate -> Proposals [label="rejected; attempts\nremain", constraint=false];
+Validate -> Failure [label="attempt budget\nexhausted"];
+Catalogs -> Search;
+Search -> Proposals [label="bounded expansion or\nrepair", constraint=false];
+Search -> Recheck [label="compatible selection"];
+Search -> Failure [label="budget exhausted"];
+Recheck -> OwnPlan;
+OwnPlan -> Local;
+Local -> Motion;
+Motion -> Local [label="own measured state only", style=dashed, constraint=false];
+Motion -> Audit;
+Audit -> Results;
+OwnPlan -> Gate;
+Gate -> Spatial;
+Spatial -> Runtime;
+Runtime -> Flight;
+Flight -> Completion;
+Completion -> Results;
+Failure -> Results;
+}

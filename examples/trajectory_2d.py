@@ -72,7 +72,9 @@ def main():
     parser.add_argument("--max-altitude", type=float, default=200, help="Altitude ceiling (m)")
     parser.add_argument("--descent-angle", type=float, default=None, metavar="DEG",
                         help="Common downward flight-path angle at XYZ passage, followed by recovery (default 30° in common XYZ mode)")
-    parser.add_argument("--airspeed", type=float, default=12, help="Requested TOTAL airspeed for coupled 3D flight (m/s); horizontal speed in legacy mode")
+    parser.add_argument('--flight-regime', choices=('loiter', 'climb', 'cruise', 'descent', 'dive'),
+                        help='Use the profile operating airspeed as the mission-wide setpoint; no automatic phase switching')
+    parser.add_argument("--airspeed", type=float, help="Requested TOTAL airspeed (m/s); default: profile cruise speed when declared, otherwise 12")
     parser.add_argument("--drone-speed", type=float, action="append", metavar="M_S",
                         help="Individual airspeed; repeat once per drone, in ID order (overrides airspeed)")
     parser.add_argument("--loiter-radius", type=float, default=25, help="Radius of each holding circle (m)")
@@ -98,7 +100,7 @@ def main():
     parser.add_argument("--conflict-guidance", choices=("none", "witness"), default="witness",
                         help="Bias new proposals using sampled pair conflicts (default); none keeps unguided expansion")
     parser.add_argument("--candidate-guidance", choices=("none", "rejections"), default="none",
-                        help="Use own rejection history to propose longer level settling or wider obstacle routes; validation unchanged")
+                        help="Use own rejection history to propose longer level settling, wider obstacle routes or longer approach alignment; validation unchanged")
     # Fixed-value aliases preserve existing explicit C++ launch commands.
     parser.add_argument('--generator-mode', choices=('physical_mission',), default='physical_mission',
                         help=argparse.SUPPRESS)
@@ -247,10 +249,21 @@ def main():
             limits, flight = aircraft_profile.limits, aircraft_profile.flight
         snapshots = separate_loiter_snapshot(args.num_drones, radius=args.loiter_radius,
                                              spacing=args.loiter_spacing)
-        speeds = args.drone_speed if args.drone_speed is not None else [args.airspeed] * len(snapshots)
+        if args.flight_regime is not None and (args.airspeed is not None or args.drone_speed is not None):
+            raise ValueError('flight-regime cannot be combined with explicit airspeed/drone-speed')
+        profiles_by_id = dict(aircraft_profiles)
+        def requested_speed(snapshot):
+            if args.airspeed is not None:
+                return args.airspeed
+            profile = profiles_by_id.get(snapshot.drone_id, aircraft_profile)
+            if args.flight_regime is not None:
+                if profile is None:
+                    raise ValueError('flight-regime requires an aircraft profile with operating speeds')
+                return profile.airspeed_for(args.flight_regime)
+            return profile.airspeed_for('cruise') if profile is not None and profile.speeds is not None else 12.
+        speeds = args.drone_speed if args.drone_speed is not None else [requested_speed(s) for s in snapshots]
         if len(speeds) != len(snapshots):
             parser.error("provide one --drone-speed per drone")
-        profiles_by_id = dict(aircraft_profiles)
         snapshots = tuple(s.with_speed(speed, profiles_by_id[s.drone_id].limits if aircraft_profiles else limits)
                           for s, speed in zip(snapshots, speeds))
     except ValueError as error:

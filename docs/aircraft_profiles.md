@@ -10,7 +10,115 @@ This adds a data/configuration layer, not new aircraft equations or a hardware
 integration interface. All supported profiles currently select the existing
 normalized coordinated point-mass backend.
 
+## Configure your own powered fixed-wing aircraft
+
+Copy [custom_fixed_wing.json](../examples/aircraft/custom_fixed_wing.json) and
+edit the complete JSON record. Schema `swarm-aircraft-profile-v3` accepts physical
+SI inputs directly; the existing v1/v2 normalized profiles remain unchanged.
+
+The [compact 5 kg example](compact_5kg.md) provides a separate hypothetical
+profile with 100 km/h cruise, 175 km/h dive and a 0.30 m enclosing radius,
+plus a companion 30-degree passage mission and explicit assumption provenance.
+
+| `airframe` field | Meaning |
+|---|---|
+| `mass_kg` | Total flying mass, including payload and fuel/battery |
+| `wing_area_m2` | Reference wing planform area |
+| `air_density_kg_m3` | Constant density for this particular flight condition |
+| `zero_lift_drag_coefficient` | Dimensionless CD0 of the parabolic drag polar |
+| `induced_drag_factor` | Dimensionless k in CD = CD0 + k CL² |
+| `max_lift_coefficient` | Positive CLmax used to derive the 1g stall speed |
+| `max_thrust_n` | Positive constant available thrust in newtons |
+| `max_airbrake_drag_n` | Additional available braking force; use 0 without an airbrake |
+
+`limits` contains speed, load, bank/roll, flight-path, climb/descent and vertical
+acceleration bounds. `geometry.bounding_radius_m` must enclose the whole aircraft.
+All fields are required. Unknown fields and conflicting normalized coefficients
+are rejected. In v3, do not supply `drag`, `actuators` or
+`limits.stall_speed_1g_m_s`: they are derived from the physical inputs.
+
+For mass m, wing area S and density rho, the conversion is:
+
+```text
+stall_speed_1g = sqrt(2 m g / (rho S CLmax))
+c0 = rho S CD0 / (2 m)
+ci = 2 k m g² / (rho S)
+max_thrust_acceleration = max_thrust_n / m
+max_airbrake_acceleration = max_airbrake_drag_n / m
+```
+
+These reproduce the existing drag law `D/m = c0 V² + ci n²/V²` with
+`L = n m g`. Conversion occurs once during profile loading; C++ remains the
+only production numerical backend. The original physical inputs are immutable
+and included in the profile hash and exported own-aircraft records. Changing
+mass requires recomputing the derived physics by reloading a new profile.
+
+Try the supplied illustrative aircraft on a level mission first:
+
+```bash
+.venv/bin/python examples/trajectory_3d.py --no-gui --num-drones 1 \
+  --aircraft-profile examples/aircraft/custom_fixed_wing.json \
+  --altitude 80 --target 500 0 --target-altitude 80 --descent-angle 0 \
+  --manual-cruise --horizon 120 --candidates 1 --attempts 8
+```
+
+Remove `--no-gui` to use the editor and playback. A selected aircraft can also
+load the same file through **Profile JSON** / **Load profile**. Use
+`--drone-profile ID PATH` for a complete per-ID fleet assignment.
+The example has no airbrake and a 3 m/s descent limit, so the default 30-degree
+descending mission at 12 m/s is intentionally rejected. Set mission speed,
+loiter radius, target and arrival requirements explicitly for the chosen aircraft;
+the loader never changes these to force a successful result.
+
+This models powered aircraft admitting coordinated 1g flight and a constant
+parabolic polar. It does not model inertia, control surfaces, sideslip, thrust
+curves, fuel burn, changing density or post-stall flight. Loading this file does
+not replace Gazebo's Cessna airframe, mesh, sensors or PX4 tuning: that is a
+separate model integration. No arbitrary-aircraft fidelity or certification is
+established by supplying a configuration file.
+
 ## Launching and visualizing
+
+### Operating airspeeds
+
+Physical v3 profiles can declare a complete `speeds` object:
+
+```json
+"speeds": {
+  "loiter_airspeed_m_s": 10,
+  "climb_airspeed_m_s": 11,
+  "cruise_airspeed_m_s": 12,
+  "descent_airspeed_m_s": 12,
+  "dive_airspeed_m_s": 15
+}
+```
+
+These are recommended **total airspeeds**, not horizontal or vertical speeds.
+All five values must be positive, finite, inside the declared speed envelope
+and above the 1g stall margin. Dive speed must be at least cruise speed.
+The example values are illustrative. `dive_airspeed_m_s` is an operational
+setpoint, not a structural design-dive-speed certificate. The existing
+`limits.max_airspeed_m_s` remains the hard model limit for every regime.
+`max_descent_rate_m_s` separately bounds downward vertical speed.
+
+With no explicit speed argument, the CLI uses the profile's cruise airspeed
+for each aircraft. `--flight-regime loiter|climb|cruise|descent|dive` selects a
+different declared speed. For example, add `--flight-regime dive` to the level
+demonstration above to request 15 m/s. This selects the mission-wide speed;
+it does not command a dive angle or switch speeds automatically between phases.
+Such phase-dependent transitions are not implemented here.
+
+`--airspeed` or `--drone-speed` explicitly overrides the default cruise request
+within the original physical limits. Combining either with `--flight-regime`
+is rejected. Older profiles without `speeds` keep the 12 m/s default and reject
+explicit regime selection. A v3 record without this optional object keeps its
+original meaning and hash; a partially specified object is rejected.
+
+Library callers can use `profile.airspeed_for('cruise')` (or another regime)
+when constructing their initial snapshot and mission request. The editor keeps
+existing speed settings when loading a new profile; it does not silently change
+the fixed initial snapshot. Turn/load-dependent stall, thrust/braking authority,
+full-horizon validation and execution checks still apply after speed selection.
 
 ```bash
 # Existing editor and 3D visualization, using the historical reference airframe.
@@ -28,8 +136,8 @@ normalized coordinated point-mass backend.
 ```
 
 The reference file reproduces the historical CLI's physical values. Omitting
-`--aircraft-profile` retains the original defaults and physical flags, including
-legacy/2D support. Loaded profiles require coupled point-mass 3D mode; applying
+`--aircraft-profile` retains the original physical defaults and flags.
+Production requires coupled point-mass 3D mode; applying
 them to legacy or planar dynamics is rejected.
 
 The original reference/training files are **illustrative, not calibrated aircraft descriptions**:
@@ -69,9 +177,10 @@ precedence and a profile hash describing different effective physics. Edit a
 copy of the profile instead. Mission flags such as `--airspeed`, `--loiter-radius`,
 `--max-altitude` and `--horizon` remain usable under the profile's hard limits.
 
-Initial airspeed is still 12 m/s unless explicitly configured. It is **not**
-automatically replaced if incompatible with a new profile. Individual requested
-speeds remain allowed inside the common envelope. A smaller bank limit may
+Without declared operating speeds, initial airspeed remains 12 m/s unless
+explicitly configured. With them, a fresh CLI mission defaults to cruise speed
+as described above. An incompatible explicit request is never replaced.
+Individual requested speeds remain allowed inside the common envelope. A smaller bank limit may
 also invalidate the chosen holding radius; that radius is not enlarged silently.
 The existing editor displays and checks the loaded common limits.
 
@@ -88,6 +197,9 @@ a new profile. All sections and fields are required; there are no hidden default
 inside a loaded file.
 
 The root fields are:
+
+The following contract describes the unchanged v1/v2 normalized formats; the
+physical v3 alternative is described above.
 
 - `schema`: `swarm-aircraft-profile-v1`, or `swarm-aircraft-profile-v2` with an
   additional required `geometry: {"bounding_radius_m": positive_number}` object;
@@ -112,10 +224,10 @@ ci: induced_coefficient_m3_per_s4         [m³/s⁴]
 ```
 
 Thrust and additional airbrake drag are accelerations, already divided by mass.
-The current model does **not** directly consume mass, wing area, inertia,
-control-surface geometry, battery capacity, meshes or URDF files. Adding those
-keys does not add corresponding physics: they are rejected as unknown fields.
-A new backend/schema would be needed to exploit them consistently.
+These v1/v2 formats do not accept mass or wing area; use v3 to derive the
+normalized physics from those quantities. Inertia, control-surface geometry,
+battery capacity, meshes and URDF files remain unsupported in every profile.
+Unused keys are rejected, rather than silently ignored.
 
 Validation rejects missing/unknown fields, duplicate keys, booleans/strings in
 numeric fields, non-finite/overflowing numbers, invalid bounds, unsupported
@@ -193,7 +305,7 @@ full boundary reachability or real-aircraft calibration.
 The editor can load a local JSON path for the selected aircraft and display its
 limits before planning. Per-ID parameters are bound through generation,
 execution and validation, not only stored as paths. Not implemented: arbitrary
-model plugins, mass/geometry-based aerodynamics, unpowered gliders, calibrated
+model plugins, 6-DoF geometry/inertia-based aerodynamics, unpowered gliders, calibrated
 performance curves, 6-DoF dynamics, direct JSBSim execution or onboard deployment.
 
 ## Initial common-profile stage: historical verification

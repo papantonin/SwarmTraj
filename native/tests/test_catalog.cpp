@@ -29,5 +29,16 @@ int main() {
     Pcg64 unchanged(std::vector<std::uint32_t>{7,3});
     require(physical_proposal(s,c,0,unchanged,{},nullptr,"",{},c.level_hold-.1).rejection=="invalid_proposal_adjustment",
             "shorter settling request was accepted");
+    auto invalid_lead=c;invalid_lead.approach_lead_extra_s=-1.;
+    require(physical_proposal(s,invalid_lead,0,unchanged,{}).rejection=="invalid_proposal_adjustment",
+            "negative alignment extension accepted");
+    auto feedback=c;feedback.rejection_feedback=true;Catalog retry;
+    retry.rejections["physical_approach_alignment"]=2;
+    extend_catalog(retry,s,feedback,1,0.);
+    require(!retry.adjustments.empty(),"own alignment failures did not produce a bounded hint");
+    const auto& hint=retry.adjustments.front();
+    require(std::get<std::string>(hint.at("mode").data)=="longer_approach"
+        &&std::get<double>(hint.at("approach_lead_extra_s").data)==5.,"wrong alignment hint");
+    require(retry.attempted<=feedback.attempts,"alignment hint exceeded proposal budget");
     std::cout<<"native proposals and catalog tests passed\n";
 }

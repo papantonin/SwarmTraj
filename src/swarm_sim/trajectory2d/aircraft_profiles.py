@@ -11,11 +11,13 @@ import math
 from pathlib import Path
 
 from .dynamics import Limits
+from .dynamics import G
 from .flight3d import FlightLimits
 
 
 SCHEMA = 'swarm-aircraft-profile-v1'
 GEOMETRY_SCHEMA = 'swarm-aircraft-profile-v2'
+PHYSICAL_SCHEMA = 'swarm-aircraft-profile-v3'
 MODEL = 'coordinated_point_mass_v1'
 LIMIT_FIELDS = {
     'min_airspeed_m_s': ('limits', 'min_speed'),
@@ -79,6 +81,62 @@ class PerformanceLimits:
 
 
 @dataclass(frozen=True)
+class PhysicalAirframe:
+    """Constant-density parabolic polar and force limits, in SI units."""
+    mass_kg: float
+    wing_area_m2: float
+    air_density_kg_m3: float
+    zero_lift_drag_coefficient: float
+    induced_drag_factor: float
+    max_lift_coefficient: float
+    max_thrust_n: float
+    max_airbrake_drag_n: float
+
+    def __post_init__(self):
+        for name, value in vars(self).items():
+            number = _number(value, name)
+            minimum_allowed = name in ('zero_lift_drag_coefficient', 'induced_drag_factor', 'max_airbrake_drag_n')
+            if number < 0 or (number == 0 and not minimum_allowed):
+                raise ValueError(f'{name} must be {"nonnegative" if minimum_allowed else "positive"}')
+            object.__setattr__(self, name, number)
+        self.derived()
+
+    def derived(self):
+        try:
+            loading = self.mass_kg / (self.air_density_kg_m3 * self.wing_area_m2)
+            result = dict(
+                stall_speed=math.sqrt(2 * G * loading / self.max_lift_coefficient),
+                parasitic_drag=self.zero_lift_drag_coefficient / (2 * loading),
+                induced_drag=2 * self.induced_drag_factor * G**2 * loading,
+                max_thrust_acceleration=self.max_thrust_n / self.mass_kg,
+                max_brake_acceleration=self.max_airbrake_drag_n / self.mass_kg)
+        except (OverflowError, ZeroDivisionError, ValueError) as error:
+            raise ValueError('physical airframe conversion is out of numerical range') from error
+        if any(not math.isfinite(value) for value in result.values()) or result['stall_speed'] <= 0:
+            raise ValueError('physical airframe conversion is out of numerical range')
+        return result
+
+
+@dataclass(frozen=True)
+class OperatingSpeeds:
+    """Recommended total airspeeds, not changes to the physical envelope."""
+    loiter_airspeed_m_s: float
+    climb_airspeed_m_s: float
+    cruise_airspeed_m_s: float
+    descent_airspeed_m_s: float
+    dive_airspeed_m_s: float
+
+    def __post_init__(self):
+        for name, value in vars(self).items():
+            number = _number(value, name)
+            if number <= 0:
+                raise ValueError(f'{name} must be positive')
+            object.__setattr__(self, name, number)
+        if self.dive_airspeed_m_s < self.cruise_airspeed_m_s:
+            raise ValueError('recommended dive airspeed must not be below cruise airspeed')
+
+
+@dataclass(frozen=True)
 class AircraftProfile:
     name: str
     description: str
@@ -87,6 +145,8 @@ class AircraftProfile:
     flight: FlightLimits
     performance: PerformanceLimits
     bounding_radius_m: float | None = None
+    airframe: PhysicalAirframe | None = None
+    speeds: OperatingSpeeds | None = None
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not self.name.strip() or len(self.name) > 120:
@@ -110,6 +170,24 @@ class AircraftProfile:
             if radius <= 0:
                 raise ValueError('bounding_radius_m must be positive')
             object.__setattr__(self, 'bounding_radius_m', radius)
+        if self.airframe is not None:
+            if not isinstance(self.airframe, PhysicalAirframe) or self.bounding_radius_m is None:
+                raise ValueError('physical airframe requires validated parameters and enclosing geometry')
+            if any(getattr(self.flight, key) != value for key, value in self.airframe.derived().items()):
+                raise ValueError('effective flight parameters differ from physical airframe derivation')
+        if self.speeds is not None:
+            if self.airframe is None or not isinstance(self.speeds, OperatingSpeeds):
+                raise ValueError('operating speeds require a physical v3 airframe')
+            lower = max(self.limits.min_speed, self.flight.stall_speed * self.flight.stall_margin)
+            if any(not lower <= value <= self.limits.max_speed for value in vars(self.speeds).values()):
+                raise ValueError('operating airspeeds must lie within the physical speed and 1g stall limits')
+
+    def airspeed_for(self, regime='cruise'):
+        if regime not in ('loiter', 'climb', 'cruise', 'descent', 'dive'):
+            raise ValueError('unknown flight regime')
+        if self.speeds is None:
+            raise ValueError('this aircraft profile does not declare operating speeds')
+        return getattr(self.speeds, regime + '_airspeed_m_s')
 
     def to_dict(self):
         def group(mapping):
@@ -120,6 +198,14 @@ class AircraftProfile:
                 'limits': group(LIMIT_FIELDS), 'actuators': group(ACTUATOR_FIELDS), 'drag': group(DRAG_FIELDS)}
         if self.bounding_radius_m is not None:
             document.update(schema=GEOMETRY_SCHEMA, geometry={'bounding_radius_m': self.bounding_radius_m})
+        if self.airframe is not None:
+            document['schema'] = PHYSICAL_SCHEMA
+            document['airframe'] = dict(vars(self.airframe))
+            del document['limits']['stall_speed_1g_m_s']
+            del document['actuators']
+            del document['drag']
+            if self.speeds is not None:
+                document['speeds'] = dict(vars(self.speeds))
         return document
 
     @property
@@ -157,22 +243,38 @@ def reference_aircraft_profile():
 
 
 def aircraft_profile_from_dict(document):
-    geometry = isinstance(document, dict) and document.get('schema') == GEOMETRY_SCHEMA
+    physical = isinstance(document, dict) and document.get('schema') == PHYSICAL_SCHEMA
+    has_speeds = physical and 'speeds' in document
+    geometry = isinstance(document, dict) and document.get('schema') in (GEOMETRY_SCHEMA, PHYSICAL_SCHEMA)
     _keys(document, ('schema', 'model', 'unit_system', 'name', 'description', 'calibration_status',
-                     'limits', 'actuators', 'drag', *(('geometry',) if geometry else ())), 'profile')
-    if document['schema'] not in (SCHEMA, GEOMETRY_SCHEMA) or document['model'] != MODEL or document['unit_system'] != 'SI':
+                     'limits', *(('airframe',) if physical else ('actuators', 'drag')),
+                     *(('geometry',) if geometry else ()), *(('speeds',) if has_speeds else ())), 'profile')
+    if document['schema'] not in (SCHEMA, GEOMETRY_SCHEMA, PHYSICAL_SCHEMA) or document['model'] != MODEL or document['unit_system'] != 'SI':
         raise ValueError('unsupported aircraft schema, model or unit system')
     values = {'limits': {}, 'flight': {}, 'performance': {}}
-    for name, mapping in (('limits', LIMIT_FIELDS), ('actuators', ACTUATOR_FIELDS), ('drag', DRAG_FIELDS)):
+    mappings = [('limits', {key: value for key, value in LIMIT_FIELDS.items()
+                           if not physical or key != 'stall_speed_1g_m_s'})]
+    if not physical:
+        mappings.extend((('actuators', ACTUATOR_FIELDS), ('drag', DRAG_FIELDS)))
+    for name, mapping in mappings:
         _keys(document[name], mapping, name)
         for external, (owner, attribute) in mapping.items():
             values[owner][attribute] = _number(document[name][external], f'{name}.{external}')
+    airframe = None
+    if physical:
+        _keys(document['airframe'], PhysicalAirframe.__dataclass_fields__, 'airframe')
+        airframe = PhysicalAirframe(**document['airframe'])
+        values['flight'].update(airframe.derived())
     radius = None
     if geometry:
         _keys(document['geometry'], ('bounding_radius_m',), 'geometry')
         radius = _number(document['geometry']['bounding_radius_m'], 'bounding_radius_m')
+    speeds = None
+    if has_speeds:
+        _keys(document['speeds'], OperatingSpeeds.__dataclass_fields__, 'speeds')
+        speeds = OperatingSpeeds(**document['speeds'])
     return AircraftProfile(document['name'], document['description'], document['calibration_status'],
-                           Limits(**values['limits']), FlightLimits(**values['flight']), PerformanceLimits(**values['performance']), radius)
+                           Limits(**values['limits']), FlightLimits(**values['flight']), PerformanceLimits(**values['performance']), radius, airframe, speeds)
 
 
 def _unique_object(pairs):

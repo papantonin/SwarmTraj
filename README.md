@@ -109,6 +109,7 @@ independent full-horizon separation and clearance rechecks before execution.
 | Installation | [New-machine setup and troubleshooting](docs/installation.md) |
 | Usage and parameters | [3D trajectories](docs/trajectory_3d.md) · [Mission editor](docs/scenario_editor.md) |
 | Coordination and physics | [Architecture](docs/architecture.md) · [Flight model](docs/flight_model_3d.md) |
+| Aircraft configuration | [Custom physical parameters and JSON profiles](docs/aircraft_profiles.md#configure-your-own-powered-fixed-wing-aircraft) |
 | C++ backend | [Defaults and installation](docs/planner_defaults.md) · [Native kernel and benchmarks](docs/native_kernel.md) |
 | Validation and trials | [Scenario campaigns](docs/scaling_campaign.md) · [Flight-envelope validation](docs/flight_envelope_validation.md) |
 | PX4 / Gazebo | [Editor and setup](docs/gazebo_editor.md) · [Four-aircraft experiment](docs/gazebo_fleet.md) |

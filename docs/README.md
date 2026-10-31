@@ -18,6 +18,7 @@ missions do not inherit the planner's timing or separation claims.
 
 - [Coupled 3D equations and assumptions](flight_model_3d.md)
 - [Aircraft profile schemas and identity](aircraft_profiles.md)
+- [Hypothetical compact 5 kg airframe and 30-degree dive example](compact_5kg.md)
 - [Per-aircraft profiles, enclosing geometry and margins](heterogeneous_aircraft.md)
 - [Disturbed execution and own-state tracking](robust_tracking.md)
 - [Static obstacles and full-horizon clearance](obstacles.md)
@@ -35,10 +36,10 @@ missions do not inherit the planner's timing or separation claims.
 - [Physical recovery primitives and direct individual mission construction](phase2_kinodynamic.md)
 - [Generator migration and validation gates](generator_migration.md)
 - [CPU/memory audit and Git checkpoint before C++](cpp_readiness.md)
-- [Optional C++20 kernel: build, numerical contract and measurements](native_kernel.md)
+- [Required C++20 engine: build, numerical contract and measurements](native_kernel.md)
 - [Complete native physical planner: migration and qualification](native_planner.md)
 - [Default C++ planner: selection, installation and saved-scenario compatibility](planner_defaults.md)
-- [Current planning and execution architecture](architecture.md)
+- [Current architecture: profiles, C++ planning, local execution and PX4/Gazebo boundaries](architecture.md)
 - [Mission editor: essential inputs and Advanced settings](scenario_editor.md)
 
 ## Measurements and validation

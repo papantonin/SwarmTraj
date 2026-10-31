@@ -96,7 +96,8 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     std::optional<double> hold,double extra_clearance) {
     auto fail=[](const char* reason){return ProposalResult{{},reason};};
     if((hold&&(!std::isfinite(*hold)||*hold<c.level_hold))
-       ||!std::isfinite(extra_clearance)||extra_clearance<0.)return fail("invalid_proposal_adjustment");
+       ||!std::isfinite(extra_clearance)||extra_clearance<0.
+       ||!std::isfinite(c.approach_lead_extra_s)||c.approach_lead_extra_s<0.)return fail("invalid_proposal_adjustment");
     const auto cruise=choose_cruise(s,c,id,rng,repair,mode);if(!cruise)return fail("physical_approach_headroom");
     auto r=fixture_recipe(c,s.initial[3],*cruise);double terminal;
     if(!terminal_distance(s.initial[3],*cruise,c.physics,r,terminal))return fail("physical_terminal_construction");
@@ -140,7 +141,7 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     }
     const Point direction{std::cos(heading),std::sin(heading)},normal{-direction[1],direction[0]};
     Point gate{c.target[0]-terminal*direction[0],c.target[1]-terminal*direction[1]};
-    const double lead=s.initial[3]*(6+3*(id%5));Point join{gate[0]-lead*direction[0],gate[1]-lead*direction[1]};
+    const double lead=s.initial[3]*(6+3*(id%5)+c.approach_lead_extra_s);Point join{gate[0]-lead*direction[0],gate[1]-lead*direction[1]};
     if(repair&&mode=="lateral") {
         const Point start{s.initial[0],s.initial[1]},delta=difference(join,start);
         const auto side=repair->side();const auto& own=repair->conflict.positions[side];const auto& other=repair->conflict.positions[1-side];

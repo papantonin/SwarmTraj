@@ -1,0 +1,40 @@
+{
+  "schema": "swarm-aircraft-profile-v3",
+  "model": "coordinated_point_mass_v1",
+  "unit_system": "SI",
+  "name": "compact_5kg_100kmh_cruise_175kmh_dive",
+  "description": "Hypothetical compact high-wing-loading aircraft. User requirements: 5 kg, 0.30 m enclosing radius, 100 km/h cruise and 175 km/h dive. Other values are unmeasured simulation assumptions, including constant thrust and idealized airbrake force. The companion compact_5kg_30deg.sh requests a 30-degree target passage; angle is a mission setting. No calibrated geometry, propulsion, stability, endurance or Gazebo model is supplied. See docs/compact_5kg.md.",
+  "calibration_status": "illustrative",
+  "geometry": {"bounding_radius_m": 0.3},
+  "speeds": {
+    "loiter_airspeed_m_s": 25.5,
+    "climb_airspeed_m_s": 27,
+    "cruise_airspeed_m_s": 27.77777777777778,
+    "descent_airspeed_m_s": 33.333333333333336,
+    "dive_airspeed_m_s": 48.61111111111111
+  },
+  "airframe": {
+    "mass_kg": 5,
+    "wing_area_m2": 0.12,
+    "air_density_kg_m3": 1.225,
+    "zero_lift_drag_coefficient": 0.045,
+    "induced_drag_factor": 0.18,
+    "max_lift_coefficient": 1.4,
+    "max_thrust_n": 35,
+    "max_airbrake_drag_n": 20
+  },
+  "limits": {
+    "min_airspeed_m_s": 25,
+    "max_airspeed_m_s": 55.55555555555556,
+    "max_bank_deg": 50,
+    "max_roll_rate_deg_s": 60,
+    "stall_margin": 1.12,
+    "min_load_factor": 0.3,
+    "max_load_factor": 3.5,
+    "max_flight_path_deg": 45,
+    "max_flight_path_rate_deg_s": 8,
+    "max_climb_rate_m_s": 8,
+    "max_descent_rate_m_s": 30,
+    "max_vertical_acceleration_m_s2": 4
+  }
+}

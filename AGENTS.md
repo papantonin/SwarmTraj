@@ -28,7 +28,8 @@ Do not translate the interface as an incidental documentation change.
     production dynamics and RK4 live in `native/src/flight.cpp`.
   - `aircraft_profiles.py`: strict versioned fixed-wing JSON, immutable parameter
     binding and canonical identity. Common or complete per-ID assignments;
-    v2 enclosing spheres, no physical overrides or ignored fields.
+    v2 enclosing spheres and v3 SI mass/wing/polar/force conversion; no physical
+    overrides or ignored fields. Preserve original inputs and derived-physics identity.
   - `coupled_planning.py`: independent Python full-horizon audit replay, not a
     proposal generator. Keep its separately implemented physical checks.
   - `execution.py`: local tracking, disturbances and global evaluation.

@@ -89,11 +89,15 @@ void extend_catalog(Catalog& catalog,const Designation& snapshot,const PlanningS
             std::vector<std::pair<std::string,std::string>> available;
             if(proposal_config.cruise_levels>1&&count(catalog.rejections,"validation_cruise_level_not_reached")>=2)available.emplace_back("settle_levels","validation_cruise_level_not_reached");
             if(!c.obstacles.empty()&&count(catalog.rejections,"obstacle_clearance")>=2)available.emplace_back("wider_route","obstacle_clearance");
+            if(approach&&count(catalog.rejections,"physical_approach_alignment")>=2)available.emplace_back("longer_approach","physical_approach_alignment");
             if(!available.empty()) {
                 const auto trial=catalog.adjustments.size(),cycle=trial/available.size();const auto [recipe,trigger]=available[trial%available.size()];
-                if(recipe=="settle_levels")hold=std::max(5.,c.level_hold+2*(1+cycle%2));else extra=5.*(1+cycle%3);
+                if(recipe=="settle_levels")hold=std::max(5.,c.level_hold+2*(1+cycle%2));
+                else if(recipe=="longer_approach")proposal_config.approach_lead_extra_s=5.*(1+cycle%6);
+                else extra=5.*(1+cycle%3);
                 catalog.adjustments.push_back(object({{"candidate_id",catalog.attempted},{"mode",recipe},{"trigger",trigger},{"trigger_count",count(catalog.rejections,trigger)},
                     {"level_hold_s",hold?Value(*hold):Value()},{"routing_extra_m",extra},{"accepted",false}}));adjustment=&catalog.adjustments.back();
+                if(recipe=="longer_approach")(*adjustment)["approach_lead_extra_s"]=proposal_config.approach_lead_extra_s;
             }
         }
         auto proposal=physical_proposal(snapshot,proposal_config,catalog.attempted,rng,approach,
