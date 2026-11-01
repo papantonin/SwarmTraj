@@ -147,8 +147,15 @@ and explicit aerodynamic assumptions. SDF validation and a 250-step standalone
 Gazebo load passed in the pinned isolated image. The existing Cessna adapter is
 unchanged; the prototype is deliberately unavailable as a production aircraft.
 
-This stage remains incomplete for native flight: the model does not yet match
-the planner polar or implement its 20 N ideal airbrake, and PX4 trim/stability,
+An explicit [C++ force component](compact_force_model.md) now matches the
+profile's polar and ideal 20 N brake under manufactured coordinated loads.
+Twenty-four analytical fixtures and four actual Gazebo force/acceleration
+fixtures passed. It removes inherited LiftDrag forces to avoid double counting;
+the default earlier fixture is preserved. Static fractions are bench inputs,
+not PX4 actuator bindings. The full suite passed 1,098 tests.
+
+This stage remains incomplete for native flight: aerodynamic moments,
+PX4 actuator binding, trim/stability,
 controller tuning and actual missions remain unqualified. Those are concrete
 next gates before an explicit native adapter and single-aircraft/fleet trials.
 No point-mass timing, tracking or separation claim transfers to this prototype.

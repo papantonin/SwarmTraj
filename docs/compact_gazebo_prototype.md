@@ -20,6 +20,13 @@ issues no aircraft flight commands. All mounts are read-only; no host ports or
 flight-controller devices are exposed. Generated files remain under ignored
 `results/` and are never implicitly installed in the production adapter.
 
+An explicit experimental C++ force component is now available with
+`--polar-library build/compact-gazebo/libcompact_polar.so`. See
+[its build and independent force checks](compact_force_model.md). It replaces
+the inherited LiftDrag forces and implements the profile polar and ideal brake;
+static bench inputs still lack PX4 actuator binding and aerodynamic moments.
+The default export described below retains the inherited force model.
+
 The geometry is authored from primitive ellipsoids, with an elliptical 0.56 m
 span, 0.12 m² wing. Component mass sums to exactly 5 kg, including the rotor,
 control links, small fixed gear and lidar. Component radial bounds remain
@@ -46,8 +53,9 @@ loading only: sensor readiness, trim, stability, airspeed tracking, dive
 braking, recovery, takeoff/landing and swarm execution have not been tested.
 No point-mass timing, tracking or separation claim transfers to this fixture.
 
-The next native-aircraft work is to implement and independently compare the
-force/drag and braking model, qualify longitudinal/lateral trim and control
+The C++ force/drag and braking algebra and its application in Gazebo have passed
+isolated comparisons. Next work is aerodynamic moments and actuator binding,
+followed by longitudinal/lateral trim and control
 responses, then introduce an explicit isolated PX4 adapter with parameter
 readback and single-aircraft flight qualification. Only after those gates
 should four independent PX4 instances be exercised. Shared scenario schemas

@@ -54,3 +54,15 @@ def test_incompatible_mass_and_unenclosable_wing_fail():
     large=replace(profile,airframe=airframe,flight=replace(profile.flight,**airframe.derived()))
     with pytest.raises(ValueError,match='wing does not fit'):
         build_model(large,template(),lidar)
+
+
+def test_explicit_polar_replaces_inherited_forces_without_claiming_px4_controls():
+    profile=load_aircraft_profile('examples/aircraft/compact_5kg.json')
+    sdf,record=build_model(profile,template(),Path('examples/gazebo/models/rc_cessna_lidar/model.sdf').read_text(),matched_polar=True)
+    plugins=ET.fromstring(sdf).findall('model/plugin')
+    assert all(p.get('name')!='gz::sim::systems::LiftDrag' for p in plugins)
+    own=[p for p in plugins if p.get('name')=='swarm::CompactPolar'];assert len(own)==1
+    assert float(own[0].findtext('max_brake'))==20
+    assert float(own[0].findtext('brake_fraction'))==0
+    assert record['ideal_airbrake_implemented'] and not record['px4_flight_qualified']
+    assert not record['wind_supported'] and 'bench' in record['airbrake_control']

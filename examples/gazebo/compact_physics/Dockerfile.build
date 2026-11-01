@@ -1,0 +1,5 @@
+# Build tool only. Runtime continues to use the original pinned image.
+FROM px4io/px4-sitl-gazebo@sha256:5ace9dbca657e385cc5c529432fd6d09db6165e482de9df5ab129a941a36aa54
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends g++ make && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends cppzmq-dev && rm -rf /var/lib/apt/lists/*

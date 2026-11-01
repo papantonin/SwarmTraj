@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import uuid
 import xml.etree.ElementTree as ET
 from swarm_sim.px4_gazebo import IMAGE,ROOT
@@ -24,11 +25,18 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--check',action='store_true')
+    parser.add_argument('--polar-library',type=Path,help='Explicit experimental C++ force plugin; bench only')
     args=parser.parse_args();output=args.output.resolve();output.mkdir(parents=True,exist_ok=False)
     official=run(['docker','run','--rm','--network','none','--entrypoint','/bin/cat',IMAGE,
                   '/opt/px4-gazebo/share/gz/models/rc_cessna/model.sdf']).stdout
     profile=load_aircraft_profile(ROOT/'examples/aircraft/compact_5kg.json')
-    sdf,assumptions=build_model(profile,official,(ROOT/'examples/gazebo/models/rc_cessna_lidar/model.sdf').read_text())
+    if args.polar_library:
+        if args.polar_library.name!='libcompact_polar.so' or not args.polar_library.is_file():
+            raise ValueError('polar-library must name an existing libcompact_polar.so')
+        shutil.copyfile(args.polar_library,output/'libcompact_polar.so')
+    sdf,assumptions=build_model(profile,official,(ROOT/'examples/gazebo/models/rc_cessna_lidar/model.sdf').read_text(),
+                                matched_polar=bool(args.polar_library))
+    if args.polar_library:assumptions['polar_binary_sha256']=hashlib.sha256(args.polar_library.read_bytes()).hexdigest()
     (output/'model.sdf').write_text(sdf+'\n')
     (output/'LICENSE.PX4').write_text((ROOT/'examples/gazebo/LICENSE.PX4').read_text())
     assumptions['image']=IMAGE
@@ -36,6 +44,8 @@ def main():
     assumptions['source_sha256']={str(path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest()
         for path in (ROOT/'src/swarm_sim/px4_prototype.py',Path(__file__).resolve(),
                      ROOT/'examples/gazebo/models/rc_cessna_lidar/model.sdf')}
+    assumptions['physics_source_sha256']={str(path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((ROOT/'examples/gazebo/compact_physics').glob('*')) if path.is_file()}
     assumptions['model_sha256']=hashlib.sha256(sdf.encode()).hexdigest()
     assumptions['checks']={'sdf_schema':False,'gazebo_250_step_load':False}
     # A standalone load fixture contains no PX4, waypoints or flight commands.
@@ -61,6 +71,7 @@ def main():
         name='swarm-compact-check-'+uuid.uuid4().hex
         base=['docker','run','--rm','--name',name,'--network','none','--mount',f'type=bind,src={output},dst=/prototype,readonly',
               '--env','LIBGL_ALWAYS_SOFTWARE=1','--env','GZ_PARTITION=compact-build-check','--entrypoint','/bin/sh',IMAGE]
+        base[base.index('--entrypoint'):base.index('--entrypoint')]=['--env','GZ_SIM_SYSTEM_PLUGIN_PATH=/prototype']
         try:
             schema=run(base+['-c','gz sdf -k /prototype/model.sdf'])
             (output/'sdf-check.log').write_text(schema.stdout+schema.stderr)
@@ -77,7 +88,7 @@ def main():
             subprocess.run(['docker','rm','--force',name],capture_output=True,timeout=15)
             (output/'assumptions.json').write_text(json.dumps(assumptions,indent=2)+'\n')
     print(output)
-    print('Build fixture only: PX4 flight, drag matching and airbrake remain unqualified.')
+    print('Experimental fixture: force/load checks do not qualify PX4 flight or actuator control.')
 
 
 if __name__=='__main__':main()

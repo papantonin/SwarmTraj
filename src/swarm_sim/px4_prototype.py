@@ -16,7 +16,7 @@ def child(parent,tag,text=None,**attributes):
     return node
 
 
-def build_model(profile,official_sdf,lidar_sdf):
+def build_model(profile,official_sdf,lidar_sdf,*,matched_polar=False):
     if profile.airframe is None or profile.bounding_radius_m != .3 or profile.airframe.mass_kg != 5:
         raise ValueError('this hypothetical fixture is restricted to the compact 5 kg, 0.30 m profile')
     source=ET.fromstring(official_sdf).find('model')
@@ -98,6 +98,15 @@ def build_model(profile,official_sdf,lidar_sdf):
             plugin=deepcopy(plugin)
             plugin.find('motorConstant').text=str(profile.airframe.max_thrust_n/1000**2)
             model.append(plugin)
+    if matched_polar:
+        for plugin in list(model.findall('plugin')):
+            if plugin.get('name')=='gz::sim::systems::LiftDrag':model.remove(plugin)
+        plugin=child(model,'plugin',filename='libcompact_polar.so',name='swarm::CompactPolar')
+        a=profile.airframe
+        for key,value in dict(density=a.air_density_kg_m3,area=a.wing_area_m2,
+                cd0=a.zero_lift_drag_coefficient,k=a.induced_drag_factor,clmax=a.max_lift_coefficient,
+                max_brake=a.max_airbrake_drag_n,lift_slope=4.75,zero_lift_angle=-.06,
+                brake_fraction=0.,elevator_fraction=0.).items():child(plugin,key,value)
     child(model,'static','false')
     masses=[float(p.text) for p in model.findall('link/inertial/mass')]
     if not math.isclose(sum(masses),5,abs_tol=1e-12):raise ValueError('prototype mass accounting failed')
@@ -112,4 +121,11 @@ def build_model(profile,official_sdf,lidar_sdf):
         limitations=['no matched planner drag polar or 20 N deployable airbrake',
                      'no trim, longitudinal/lateral stability or PX4 controller tuning qualification',
                      'no transfer of point-mass timing, tracking or separation validation'])
+    if matched_polar:
+        assumptions.update(aerodynamics='C++ CD0+k*CL² force kernel; assumed lift slope and clipped CL',
+            ideal_airbrake_implemented=True,airbrake_control='fixed bench fraction only; no PX4 actuator binding',
+            wind_supported=False,
+            limitations=['no aerodynamic moments, sideslip/post-stall or trim qualification',
+                'brake and elevator fractions are immutable bench inputs, not PX4 controls',
+                'no transfer of point-mass timing, tracking or separation validation'])
     return ET.tostring(root,encoding='unicode'),assumptions
