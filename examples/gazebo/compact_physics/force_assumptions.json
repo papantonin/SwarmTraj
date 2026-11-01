@@ -1,0 +1,6 @@
+{
+  "schema": "swarm-gazebo-force-assumptions-v1",
+  "lift_slope_per_rad": 4.75,
+  "zero_lift_angle_rad": -0.06,
+  "calibration_status": "illustrative"
+}

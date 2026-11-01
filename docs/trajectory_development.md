@@ -159,3 +159,11 @@ PX4 actuator binding, trim/stability,
 controller tuning and actual missions remain unqualified. Those are concrete
 next gates before an explicit native adapter and single-aircraft/fleet trials.
 No point-mass timing, tracking or separation claim transfers to this prototype.
+
+The reusable force binding now accepts other physical v3 profiles in both
+qualification scripts, with mass, speed and brake force derived from the
+selected profile. Lift assumptions have a separate strict versioned JSON and
+canonical identity. The 2.5 kg example without an airbrake and the compact
+5 kg example passed actual Gazebo force checks, including an altered lift
+assumption record. Geometry and PX4 tuning remain aircraft-specific; legacy
+normalized profiles cannot supply missing physical mass/wing data implicitly.

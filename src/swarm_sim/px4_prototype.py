@@ -6,6 +6,7 @@ control derivatives below are declared assumptions, not measured airframe data.
 from copy import deepcopy
 import math
 import xml.etree.ElementTree as ET
+from .gazebo_force_model import ForceModel,ForceAssumptions
 
 MODEL='compact_5kg_prototype'
 
@@ -16,7 +17,10 @@ def child(parent,tag,text=None,**attributes):
     return node
 
 
-def build_model(profile,official_sdf,lidar_sdf,*,matched_polar=False):
+def build_model(profile,official_sdf,lidar_sdf,*,matched_polar=False,force_assumptions=None):
+    if force_assumptions is not None and not matched_polar:
+        raise ValueError('force assumptions require the explicit experimental polar component')
+    force_model=ForceModel(profile,force_assumptions if force_assumptions is not None else ForceAssumptions()) if matched_polar else None
     if profile.airframe is None or profile.bounding_radius_m != .3 or profile.airframe.mass_kg != 5:
         raise ValueError('this hypothetical fixture is restricted to the compact 5 kg, 0.30 m profile')
     source=ET.fromstring(official_sdf).find('model')
@@ -102,11 +106,7 @@ def build_model(profile,official_sdf,lidar_sdf,*,matched_polar=False):
         for plugin in list(model.findall('plugin')):
             if plugin.get('name')=='gz::sim::systems::LiftDrag':model.remove(plugin)
         plugin=child(model,'plugin',filename='libcompact_polar.so',name='swarm::CompactPolar')
-        a=profile.airframe
-        for key,value in dict(density=a.air_density_kg_m3,area=a.wing_area_m2,
-                cd0=a.zero_lift_drag_coefficient,k=a.induced_drag_factor,clmax=a.max_lift_coefficient,
-                max_brake=a.max_airbrake_drag_n,lift_slope=4.75,zero_lift_angle=-.06,
-                brake_fraction=0.,elevator_fraction=0.).items():child(plugin,key,value)
+        for key,value in force_model.plugin_values().items():child(plugin,key,value)
     child(model,'static','false')
     masses=[float(p.text) for p in model.findall('link/inertial/mass')]
     if not math.isclose(sum(masses),5,abs_tol=1e-12):raise ValueError('prototype mass accounting failed')
@@ -122,7 +122,7 @@ def build_model(profile,official_sdf,lidar_sdf,*,matched_polar=False):
                      'no trim, longitudinal/lateral stability or PX4 controller tuning qualification',
                      'no transfer of point-mass timing, tracking or separation validation'])
     if matched_polar:
-        assumptions.update(aerodynamics='C++ CD0+k*CL² force kernel; assumed lift slope and clipped CL',
+        assumptions.update(force_model=force_model.record(),aerodynamics='C++ CD0+k*CL² force kernel; assumed lift slope and clipped CL',
             ideal_airbrake_implemented=True,airbrake_control='fixed bench fraction only; no PX4 actuator binding',
             wind_supported=False,
             limitations=['no aerodynamic moments, sideslip/post-stall or trim qualification',

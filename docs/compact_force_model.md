@@ -94,3 +94,73 @@ These are discrete numerical checks, not an integration-error certificate.
 The full suite passed 1,098 tests with four existing Gymnasium warnings.
 Earlier filesystem permission and initialization failures remain under
 `results/compact-physics-development/` together with successful runs.
+
+## Reusing the force benches for another aircraft
+
+The analytical and Gazebo free-body benches now accept `--aircraft-profile`.
+They bind physical v3 mass, density, wing area, polar, lift limit and brake force
+from the selected immutable profile. They no longer assume 5 kg, 20 N or the
+compact aircraft's operating speeds. Normalized v1/v2 profiles are rejected:
+those records do not identify a unique physical mass and wing area.
+
+```bash
+# An existing 2.5 kg example with no airbrake.
+.venv/bin/python scripts/qualify_compact_forces.py \
+  --aircraft-profile examples/aircraft/custom_fixed_wing.json \
+  --force-assumptions examples/gazebo/compact_physics/force_assumptions.json \
+  --output results/custom-force-algebra-NEW
+
+.venv/bin/python scripts/qualify_compact_gazebo_forces.py \
+  --aircraft-profile examples/aircraft/custom_fixed_wing.json \
+  --force-assumptions examples/gazebo/compact_physics/force_assumptions.json \
+  --library build/compact-gazebo/libcompact_polar.so \
+  --output results/custom-force-gazebo-NEW
+```
+
+The historical script and binary names remain compatible; the force component
+is reusable. The sphere in the free-body bench is a manufactured numerical
+fixture, not a generated aircraft collision mesh. Its mass is the selected
+profile mass and its inertia is an explicitly manufactured solid sphere.
+
+Lift slope and zero-lift angle are separate from the authoritative physical
+profile. The optional `--force-assumptions` file uses this strict schema:
+
+```json
+{
+  "schema": "swarm-gazebo-force-assumptions-v1",
+  "lift_slope_per_rad": 4.75,
+  "zero_lift_angle_rad": -0.06,
+  "calibration_status": "illustrative"
+}
+```
+
+Omitting that file retains the earlier illustrative values. Unknown/duplicate
+fields, boolean/nonfinite numeric values and unsupported schemas are rejected.
+A calibration label records provenance, not flight certification. Profile and
+assumption records each have a canonical hash, and a combined binding hash
+identifies the exact pairing. No profile fields are overwritten by lift
+assumptions. Those same values are passed to the compiled C++ probe and the
+Gazebo component, including when exported with the compact geometry.
+
+Analytical test speeds use declared loiter/cruise/dive and maximum airspeed,
+deduplicated in that order. Physical v3 profiles without operating speeds use
+four evenly spaced values from the greater of the minimum airspeed and 1g
+stall margin to the maximum. Gazebo uses declared cruise, or the midpoint of
+that range when no cruise is declared. These are explicit force fixtures, not
+mission speed choices. Requests outside the lift/forward-flow domain are
+retained as failed trials, never clipped into a passing expectation.
+
+The generalization was exercised with the existing 5 kg and 2.5 kg profiles,
+including zero brake force and a separate 5.6/rad, -0.03 rad lift assumption.
+All 12 actual Gazebo fixtures (three configurations, four fixtures each) passed;
+the largest observed force-balance residual was below 1.7e-11 N. The analytical
+regression runs both profiles with the altered lift assumptions and retains
+deliberately unsupported lift requests as failures.
+The integrated suite passed 1,109 tests, with four existing Gymnasium warnings.
+Evidence is retained under `results/generic-force-development/`.
+
+This does not generalize the authored compact geometry or PX4 tuning. The full
+prototype exporter still enforces its 5 kg / 0.30 m restriction. Other aircraft
+require their own geometry/inertia and actuator definitions before any native
+trim or flight qualification. Aerodynamic moments and PX4 actuator binding
+remain the next development steps.

@@ -77,6 +77,13 @@ not replace Gazebo's Cessna airframe, mesh, sensors or PX4 tuning: that is a
 separate model integration. No arbitrary-aircraft fidelity or certification is
 established by supplying a configuration file.
 
+Physical v3 profiles can also drive the experimental
+[C++ force qualification benches](compact_force_model.md#reusing-the-force-benches-for-another-aircraft).
+Those benches read mass, polar and brake force from the selected profile, with
+separate versioned lift assumptions. They do not create aircraft geometry or
+qualify PX4 control. The compact geometry exporter remains specific to its
+5 kg / 0.30 m prototype.
+
 ## Launching and visualizing
 
 ### Operating airspeeds

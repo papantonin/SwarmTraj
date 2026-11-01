@@ -26,6 +26,10 @@ An explicit experimental C++ force component is now available with
 the inherited LiftDrag forces and implements the profile polar and ideal brake;
 static bench inputs still lack PX4 actuator binding and aerodynamic moments.
 The default export described below retains the inherited force model.
+The force benches accept other physical v3 aircraft profiles and separate
+versioned lift assumptions. This does not remove this geometry exporter's
+5 kg / 0.30 m restriction. Its optional `--force-assumptions` requires
+`--polar-library` and records the exact profile/assumption pairing.
 
 The geometry is authored from primitive ellipsoids, with an elliptical 0.56 m
 span, 0.12 m² wing. Component mass sums to exactly 5 kg, including the rotor,
