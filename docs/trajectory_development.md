@@ -137,7 +137,18 @@ These independently valid selected trajectories are not identical commands
 under numerical refinement. Failed low-target, no-brake and insufficient
 descent-authority requests remain explicit regression negatives, not successes.
 
-## Remaining ordered work
+## 5. Separate hypothetical Gazebo prototype
 
-5. Extend PX4/Gazebo only with an explicit native airframe and separately checked
-   model/controller assumptions; point-mass claims do not transfer.
+The user selected a hypothetical simulation prototype rather than supplying a
+native measured airframe. The [build prototype](compact_gazebo_prototype.md)
+exports authored compact geometry, exact 5 kg component accounting, primitive
+0.30 m enclosure bounds, assumed inertias, inherited sensor/servo conventions
+and explicit aerodynamic assumptions. SDF validation and a 250-step standalone
+Gazebo load passed in the pinned isolated image. The existing Cessna adapter is
+unchanged; the prototype is deliberately unavailable as a production aircraft.
+
+This stage remains incomplete for native flight: the model does not yet match
+the planner polar or implement its 20 N ideal airbrake, and PX4 trim/stability,
+controller tuning and actual missions remain unqualified. Those are concrete
+next gates before an explicit native adapter and single-aircraft/fleet trials.
+No point-mass timing, tracking or separation claim transfers to this prototype.

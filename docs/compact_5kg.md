@@ -122,6 +122,8 @@ bash examples/scenarios/compact_5kg_30deg.sh --no-gui \
 
 The script's final arguments allow explicit mission overrides, not physical
 overrides of the loaded profile. It does not initialize or configure Gazebo.
+An explicitly separate [hypothetical Gazebo build prototype](compact_gazebo_prototype.md)
+is available; its force model and PX4 flight remain unqualified.
 
 The native local pull-out primitive loses about 81.9 m over 6.6 s for this
 profile at 175 km/h and 30 degrees. The 200 m target leaves room for recovery;
