@@ -104,8 +104,40 @@ warnings), and all seven standalone native tests passed. Negative cases cover
 missing or corrupted speed references, unattained terminal regimes, wrong
 initial airspeed, insufficient descent authority, low targets and absent brakes.
 
+## 4. Numerical and mission qualification
+
+Run the incremental qualification with:
+
+```bash
+.venv/bin/python scripts/qualify_operating_speeds.py \
+  --output results/operating-qualification-NEW
+```
+
+The recorded 12 requests all passed: 1 and 4 aircraft, seeds 7 and 19,
+control steps 0.2, 0.1 and 0.05 s, 420 s common horizon, four candidates and
+24 attempts. Each selected native mission was independently replayed in Python
+and accepted by the full execution observer, including attained phase speeds.
+Source hashes, binary identity, hardware, settings, failures and signatures are
+retained in the incremental report. An incomplete journal never reports that
+the full campaign passed. This small campaign is not broad aircraft qualification.
+
+On an Intel Core i3-1115G4, serial native planning measured 0.060–0.290 s for
+one aircraft and 0.431–1.166 s for four across these different control steps.
+The process peak RSS was about 334 MiB, including Python independent audits,
+execution and accumulated trials; this is not isolated native-kernel memory or
+a Python/C++ speedup measurement. Clock timing remains outside mission identity.
+
+Reintegrating each same held-command interval with eight rather than two RK4
+substeps differed by at most 7.0e-7 m per position coordinate and 7.7e-8 m/s
+in airspeed in these fixtures. These are local interval comparisons, not a
+certified global integration-error bound. Changing the control step also changes
+feedback, catalog acceptance and selection: for four aircraft at seed 19,
+drone 3 contact moved from 87.90 to 94.57 to 94.75 s as the step decreased.
+These independently valid selected trajectories are not identical commands
+under numerical refinement. Failed low-target, no-brake and insufficient
+descent-authority requests remain explicit regression negatives, not successes.
+
 ## Remaining ordered work
 
-4. Expand numerical and mission qualification, retaining failed trials.
 5. Extend PX4/Gazebo only with an explicit native airframe and separately checked
    model/controller assumptions; point-mass claims do not transfer.
