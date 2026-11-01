@@ -73,9 +73,39 @@ Native planning/catalog/search capabilities are version 2; stale extensions
 fail with rebuild instructions rather than silently ignoring the new options.
 The integrated suite passed 1,075 tests and all seven standalone C++ tests.
 
+## 3. Integrated operating-speed schedule
+
+The explicit `--phase-speeds` option binds each own profile's loiter, climb,
+cruise, descent and dive airspeeds. The terminal regime is selected separately.
+Native proposals slew the reference through physical thrust/braking commands;
+they never reset airspeed. The compact launcher uses a 1.5 m/s² reference slew
+and an explicit 420 s horizon. It starts at 25.5 m/s, transits at 100 km/h,
+accelerates upstream of descent to 175 km/h, then decelerates, climbs and
+recovers 100 km/h cruise. Its initial state and horizon differ from the earlier
+constant-speed case, so the elapsed mission times are not a pure optimization
+comparison.
+
+Native and independently written Python validators require a rate-bounded
+reference, actual cruise held before arrival, actual terminal attainment and
+terminal speed at reintegrated contact, plus recovered final cruise speed.
+Execution adds observer-only actual-speed acceptance checks. Single-level
+strict profiles are supported; smooth/mixed overlays and lossy shared PX4
+exports are explicitly rejected. Existing constant-speed behavior remains
+unchanged; all four prior selected candidates, state arrays and control arrays
+matched exactly in the replayed 240 s constant-speed mission.
+
+The four-aircraft operating trial passed execution with actual contact times
+182.08, 107.49, 203.68 and 91.93 s and an execution pair lower bound of
+205.04 m. Numerical limits and tracking/clock assumptions are unchanged.
+Native planning/catalog capabilities are now version 3, validation version 2
+and search version 2; older binaries fail with rebuild instructions.
+The integrated suite passed 1,087 tests (four existing Gymnasium float32
+warnings), and all seven standalone native tests passed. Negative cases cover
+missing or corrupted speed references, unattained terminal regimes, wrong
+initial airspeed, insufficient descent authority, low targets and absent brakes.
+
 ## Remaining ordered work
 
-3. Integrate phase-dependent operating speeds and validate their transitions.
 4. Expand numerical and mission qualification, retaining failed trials.
 5. Extend PX4/Gazebo only with an explicit native airframe and separately checked
    model/controller assumptions; point-mass claims do not transfer.

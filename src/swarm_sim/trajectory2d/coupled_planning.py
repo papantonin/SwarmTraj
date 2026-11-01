@@ -82,7 +82,26 @@ def validate_coupled(plan, snapshot, config, diagnostics=None):
                 return invalid(diagnostics, "validation_cruise_level_not_reached")
     elif plan.cruise_levels_m:
         return invalid(diagnostics, "validation_unrequested_cruise_levels")
-    if config.speed_profile != "constant":
+    if config.speed_schedule == 'operating':
+        reference = plan.speed_reference
+        speeds = config.operating_airspeeds
+        if (reference is None or reference.shape != (count+1,) or not np.all(np.isfinite(reference))
+                or abs(reference[0]-speeds[0])>1e-8 or abs(reference[-1]-speeds[2])>1e-8
+                or abs(s[-1,3]-speeds[2])>.2 or np.min(reference)<config.limits.min_speed-1e-8
+                or np.max(reference)>config.limits.max_speed+1e-8
+                or np.max(np.abs(np.diff(reference)))>config.speed_profile_acceleration*plan.dt+1e-8):
+            return invalid(diagnostics, 'validation_operating_reference')
+        before = (times>=plan.release_time)&(times<plan.arrival_time)
+        cruise_mask = before & (np.abs(reference-speeds[2])<=1e-8)&(np.abs(s[:,3]-speeds[2])<=.2)
+        cruise_mask &= (np.abs(s[:,2]-cruise)<=.2)&(np.abs(air_velocity(s)[:,2])<=.1)
+        terminal = config.terminal_speed(snapshot.speed)
+        terminal_mask = before & (np.abs(reference-terminal)<=1e-8)&(np.abs(s[:,3]-terminal)<=.2)
+        def held(mask):
+            edges=np.flatnonzero(np.diff(np.r_[False,mask,False]))
+            return bool(np.any((edges[1::2]-edges[::2]-1)*plan.dt>=1-1e-9))
+        if not held(cruise_mask) or not held(terminal_mask):
+            return invalid(diagnostics, 'validation_operating_attainment')
+    elif config.speed_profile != "constant":
         reference = plan.speed_reference
         low, high = config.speed_profile_range
         if (reference is None or reference.shape != (count + 1,) or not np.all(np.isfinite(reference))
@@ -109,6 +128,8 @@ def validate_coupled(plan, snapshot, config, diagnostics=None):
         return invalid(diagnostics, "validation_contact_event_unresolved")
     if contact is None:
         return invalid(diagnostics, "validation_contact_event")
+    if config.speed_schedule=='operating' and abs(contact.state[3]-config.terminal_speed(snapshot.speed))>.2:
+        return invalid(diagnostics, 'validation_operating_terminal_speed')
     if contact.time < plan.release_time - 1e-7:
         return invalid(diagnostics, "validation_contact_before_departure")
     if plan.approach_angle is not None:

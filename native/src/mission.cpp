@@ -26,12 +26,14 @@ std::optional<MissionResult> preflight(const std::vector<Designation>& snapshots
         const auto& s=snapshots[i];const auto& c=settings[i];const auto& p=c.physics;const double speed=s.initial[3];
         if(s.drone_id<0||!std::isfinite(s.initial[0])||!std::isfinite(s.initial[1])||!std::isfinite(s.initial[4])||!std::isfinite(s.yaw_rate))throw std::invalid_argument("invalid snapshot");
         if(!(p.min_speed<=speed&&speed<=p.max_speed))return fail("invalid_initial_state","Initial airspeed violates the model limits.");
+        if(c.operating_schedule&&std::abs(speed-c.phase_speeds[0])>1e-8)return fail("invalid_initial_state","Initial airspeed must match the declared loiter speed.");
         if(c.smooth_speed&&!(c.speed_range[0]<=speed&&speed<=c.speed_range[1]))return fail("invalid_initial_state","Initial airspeed must lie within the requested speed profile range.");
         if(std::abs(s.yaw_rate)>gravity*std::tan(p.max_bank)/speed)return fail("invalid_initial_state","Initial turn rate violates the model limits.");
         const double cruise=s.cruise.value_or(s.initial[2]);
         if(!std::isfinite(s.initial[2])||s.initial[2]<p.min_altitude||s.initial[2]>p.max_altitude
             ||(!c.cruise_range&&(!std::isfinite(cruise)||cruise<p.min_altitude||cruise>p.max_altitude)))return fail("invalid_initial_state","Initial/cruise altitude violates the altitude limits.");
         if(c.descent_degrees>0) {
+            const double speed=c.terminal_speed(s.initial[3]);
             const double angle=c.descent_degrees*(pi/180),rate=speed*std::sin(angle);
             const double ramp=std::max(1.,std::ceil(rate/(p.max_vertical_acceleration*p.dt)));
             const double level=std::ceil(std::max(1.,c.target_radius/speed+c.clock_error+p.dt)/p.dt);
@@ -85,7 +87,7 @@ Value timing_diagnostics(const PlanningSettings& c,const std::vector<Catalog>& c
     bool temporal=false;for(const char* key:{"target_not_reached_within_horizon","post_arrival_window_exceeds_horizon","recovery_exceeds_horizon","validation_arrival_horizon","validation_cruise_recovery"})temporal|=count(key)!=0;
     Value::Array advice,templates,per_drone,schedule;Value suggested;
     if(c.descent_degrees>0)for(std::size_t k=0;k<snapshots.size();++k) {
-        const auto& s=snapshots[k];const auto& p=own[k].physics;const double theta=c.descent_degrees*(pi/180),speed=s.initial[3];
+        const auto& s=snapshots[k];const auto& p=own[k].physics;const double theta=c.descent_degrees*(pi/180),speed=own[k].terminal_speed(s.initial[3]);
         const double rate=speed*std::tan(theta),steps=std::max(1.,std::ceil(rate/(.9*p.max_vertical_acceleration*p.dt)));
         const double geometric=rate*steps*p.dt/2,vertical=speed*std::sin(theta);
         const double physical=vertical*std::max(1.,std::ceil(vertical/(p.max_vertical_acceleration*p.dt)))*p.dt/2;
@@ -127,6 +129,8 @@ MissionResult run(std::vector<Designation> snapshots,std::vector<PlanningSetting
     const auto& common=settings.front();
     for(const auto& c:settings) {
         validate(c.physics);
+        validate_operating_settings(c);
+        if(c.operating_schedule&&c.mixed)throw std::invalid_argument("operating schedule does not support mixed profiles");
         if(c.steps!=common.steps||c.physics.dt!=common.physics.dt||c.horizon!=common.horizon||c.activation!=common.activation
             ||c.min_delay!=common.min_delay||c.max_delay!=common.max_delay||c.latest_arrival!=common.latest_arrival
             ||c.target!=common.target||c.target_altitude!=common.target_altitude||c.target_radius!=common.target_radius
@@ -141,6 +145,7 @@ MissionResult run(std::vector<Designation> snapshots,std::vector<PlanningSetting
             ||c.deadline!=common.deadline||c.spatial!=common.spatial||c.adaptive!=common.adaptive||c.mrv!=common.mrv
             ||c.max_margin!=common.max_margin||c.witnesses!=common.witnesses||c.reservations!=common.reservations
             ||c.tangent_approach!=common.tangent_approach||c.efficient!=common.efficient||c.efficiency_slack_cap!=common.efficiency_slack_cap
+            ||c.operating_schedule!=common.operating_schedule||c.terminal_index!=common.terminal_index
             ||c.windows!=common.windows||c.mixed!=common.mixed||c.rejection_feedback!=common.rejection_feedback||c.id_approach!=common.id_approach)
             throw std::invalid_argument("shared mission settings must match across aircraft");
     }

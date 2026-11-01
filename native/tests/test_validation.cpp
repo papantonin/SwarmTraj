@@ -18,6 +18,13 @@ int main() {
     require(validate_candidate(corrupted,initial,0,{},c).rejection=="validation_integration","corrupted history accepted");
     corrupted=path;corrupted.projected[2][0]+=.01;
     require(validate_candidate(corrupted,initial,0,{},c).rejection=="validation_projection","corrupted projection accepted");
+    auto operating=c;operating.operating_schedule=true;operating.phase_speeds={12,12,12,12,12};
+    require(validate_candidate(path,initial,0,{},operating).rejection=="validation_operating_reference","missing operating reference accepted");
+    auto scheduled=path;scheduled.has_speed_reference=true;scheduled.speed_reference.assign(path.states.size(),12.);
+    require(validate_candidate(scheduled,initial,0,{},operating).accepted(),"constant equal operating speeds rejected");
+    operating.terminal_index=9;bool rejected=false;
+    try {validate_candidate(scheduled,initial,0,{},operating);}catch(const std::invalid_argument&){rejected=true;}
+    require(rejected,"out-of-range operating regime accepted");
     c.obstacles.push_back({false,{48,0,80},{2,2,2}});
     require(validate_candidate(path,initial,0,{},c).rejection=="obstacle_clearance","post-arrival obstacle accepted");
     std::cout<<"independent native validation tests passed\n";

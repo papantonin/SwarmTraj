@@ -23,3 +23,9 @@ def require_production(config):
     reason = production_error(config)
     if reason:
         raise ValueError(reason)
+    if config.speed_schedule=='operating':
+        if config.aircraft_profiles:
+            for drone_id,_ in config.aircraft_profiles:
+                config.for_drone(drone_id)
+        elif config.operating_airspeeds is None:
+            raise ValueError('operating schedule requires a loaded aircraft profile with operating speeds')

@@ -48,7 +48,7 @@ def timing_diagnostics(config, catalogs, snapshots, plans=()):
         from .vertical import descent_geometry
         for snapshot in snapshots:
             local = config.for_drone(snapshot.drone_id)
-            rate = snapshot.speed * np.tan(np.deg2rad(config.descent_angle_deg))
+            rate = local.terminal_speed(snapshot.speed) * np.tan(np.deg2rad(config.descent_angle_deg))
             steps = max(1, int(np.ceil(rate / (.9 * local.max_vertical_acceleration * config.dt))))
             geometric_drop = rate * steps * config.dt / 2
             physical_drop = descent_geometry(snapshot.speed, local)[4]

@@ -539,6 +539,9 @@ def simulate(plans: tuple[Trajectory, ...], config: Config, clock_offsets=None,
         if event:
             safety_events.append(event)
     report['controller_protection_verified'] = all(e.filter_unresolved == 0 for e in executors)
+    if config.speed_schedule == 'operating':
+        from .execution_safety import operating_speed_diagnostics
+        report.update(operating_speed_diagnostics(flight_actual, times, plans, local_configs, contacts))
     report['control_protection_applicable'] = bool(config.coupled_flight and controller == 'constrained')
     report['safety_events'] = sorted(safety_events, key=lambda event: (event['first_observed_time_s'], event['kind']))
     report['first_safety_event'] = report['safety_events'][0] if safety_events else None

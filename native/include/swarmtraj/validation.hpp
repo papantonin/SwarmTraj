@@ -33,6 +33,10 @@ struct ValidationSettings {
     bool smooth_speed=false;
     Point speed_range{};
     double speed_acceleration=.5, clock_error=.15, aircraft_radius=0., obstacle_clearance=5.;
+    bool operating_schedule=false;
+    std::array<double,5> phase_speeds{};
+    std::size_t terminal_index=4;
+    double terminal_speed(double initial) const{return operating_schedule?phase_speeds.at(terminal_index):initial;}
     std::vector<Solid> obstacles;
 };
 struct ValidationResult {
@@ -41,6 +45,7 @@ struct ValidationResult {
     std::string detail{};
     bool accepted() const { return rejection.empty(); }
 };
+void validate_operating_settings(const ValidationSettings&);
 Projection project_state(const State&, const Control&, const Parameters&);
 State sample_candidate(const Candidate&, double time, const Parameters&);
 double solid_distance(const Solid&, const State&);

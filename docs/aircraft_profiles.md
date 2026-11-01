@@ -105,8 +105,18 @@ With no explicit speed argument, the CLI uses the profile's cruise airspeed
 for each aircraft. `--flight-regime loiter|climb|cruise|descent|dive` selects a
 different declared speed. For example, add `--flight-regime dive` to the level
 demonstration above to request 15 m/s. This selects the mission-wide speed;
-it does not command a dive angle or switch speeds automatically between phases.
-Such phase-dependent transitions are not implemented here.
+it does not command a dive angle. Add `--phase-speeds` for an integrated own
+operating-speed schedule (loiter, climb/descent to cruise, cruise, selected
+terminal regime, deceleration, recovery and cruise). With that option,
+`--flight-regime` selects only `cruise`, `descent` or `dive` at passage. Explicit
+`--airspeed`/`--drone-speed` conflicts are rejected. The reference slew rate is
+`--speed-profile-acceleration`; physical controls and limits still determine
+actual acceleration. Cruise must be attained for at least one second before
+arrival, terminal speed must be attained and present at reintegrated contact,
+and final cruise speed must be recovered (0.2 m/s numerical tolerance).
+Independent replay and execution observers check actual airspeeds. Only strict
+single-level profiles support this schedule; unsupported overlays and lossy
+shared PX4 exports fail explicitly. Older constant-speed missions are unchanged.
 
 `--airspeed` or `--drone-speed` explicitly overrides the default cruise request
 within the original physical limits. Combining either with `--flight-regime`

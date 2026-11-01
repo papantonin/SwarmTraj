@@ -41,6 +41,8 @@ def default_scenario(seed=7, obstacles=()):
 
 
 def validate_scenario(snapshots, config):
+    if config.speed_schedule!='constant':
+        raise ValueError('Shared PX4 scenarios do not yet persist operating speed schedules; use the point-mass launcher.')
     if config.selection_policy=='efficient' or config.efficiency_slack_cap_m!=20.:
         raise ValueError('Shared PX4 scenarios do not yet persist efficiency selection; use the point-mass launcher.')
     if config.approach_routing != 'pursuit':

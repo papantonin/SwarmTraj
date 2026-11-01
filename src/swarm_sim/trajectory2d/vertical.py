@@ -9,6 +9,7 @@ import numpy as np
 
 def descent_geometry(speed, config):
     """Final constant-slope passage followed by a bounded vertical recovery."""
+    speed=config.terminal_speed(speed)
     angle = np.deg2rad(config.descent_angle_deg)
     rate = speed * (np.sin(angle) if config.coupled_flight else np.tan(angle))
     ramp_steps = max(1, int(np.ceil(rate / (config.max_vertical_acceleration * config.dt))))
@@ -22,17 +23,18 @@ def descent_error(snapshot, config):
     if config.descent_angle_deg == 0:
         return None
     rate, _, _, drop, recovery_drop = descent_geometry(snapshot.speed, config)
+    speed=config.terminal_speed(snapshot.speed)
     if rate > config.descent_rate_limit + 1e-9:
-        maximum = np.rad2deg(np.arcsin(min(1, config.descent_rate_limit / snapshot.speed))
-                            if config.coupled_flight else np.arctan2(config.descent_rate_limit, snapshot.speed))
-        return f"Drone {snapshot.drone_id}: descent angle limited to {maximum:.1f}° at {snapshot.speed:g} m/s."
+        maximum = np.rad2deg(np.arcsin(min(1, config.descent_rate_limit / speed))
+                            if config.coupled_flight else np.arctan2(config.descent_rate_limit, speed))
+        return f"Drone {snapshot.drone_id}: descent angle limited to {maximum:.1f}° at {speed:g} m/s."
     if config.coupled_flight:
         if config.descent_angle_deg > config.flight.max_flight_path_deg:
             return f"Drone {snapshot.drone_id}: flight-path angle exceeds the flight-model limit."
         angle = np.deg2rad(config.descent_angle_deg)
         # Necessary steady straight-flight trim, not a proof of a feasible approach.
         load = np.cos(angle)
-        axial = config.flight.drag(snapshot.speed, load) - 9.81 * np.sin(angle)
+        axial = config.flight.drag(speed, load) - 9.81 * np.sin(angle)
         if axial < -config.flight.max_brake_acceleration - 1e-9:
             return f"Drone {snapshot.drone_id}: Insufficient drag/airbrake authority to maintain airspeed on this slope."
     if config.target_altitude - recovery_drop < config.min_altitude - 1e-8:

@@ -54,9 +54,9 @@ std::optional<double> choose_cruise(const Designation& s,const PlanningSettings&
     if(!c.cruise_range)return s.cruise.value_or(s.initial[2]);
     double low=c.cruise_range->at(0),high=c.cruise_range->at(1);
     if(c.descent_degrees>0) {
-        auto r=fixture_recipe(c,s.initial[3],0.);double drop;
-        if(!headroom(s.initial[3],c.physics,r,drop))return {};
-        low=std::max(low,*c.target_altitude+drop+(2*c.target_radius+s.initial[3]*c.physics.dt)*std::sin(c.descent_degrees*(pi/180)));
+        const double speed=c.terminal_speed(s.initial[3]);auto r=fixture_recipe(c,speed,0.);double drop;
+        if(!headroom(speed,c.physics,r,drop))return {};
+        low=std::max(low,*c.target_altitude+drop+(2*c.target_radius+speed*c.physics.dt)*std::sin(c.descent_degrees*(pi/180)));
     }
     if(low>high)return {};
     if(repair&&mode=="altitude") {
@@ -95,12 +95,15 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     std::optional<double> approach,const Repair* repair,const std::string& mode,std::optional<double> departure,
     std::optional<double> hold,double extra_clearance) {
     auto fail=[](const char* reason){return ProposalResult{{},reason};};
+    validate_operating_settings(c);
+    if(c.operating_schedule&&c.mixed)throw std::invalid_argument("operating schedule does not support mixed profiles");
     if((hold&&(!std::isfinite(*hold)||*hold<c.level_hold))
        ||!std::isfinite(extra_clearance)||extra_clearance<0.
        ||!std::isfinite(c.approach_lead_extra_s)||c.approach_lead_extra_s<0.)return fail("invalid_proposal_adjustment");
     const auto cruise=choose_cruise(s,c,id,rng,repair,mode);if(!cruise)return fail("physical_approach_headroom");
-    auto r=fixture_recipe(c,s.initial[3],*cruise);double terminal;
-    if(!terminal_distance(s.initial[3],*cruise,c.physics,r,terminal))return fail("physical_terminal_construction");
+    const double terminal_speed=c.terminal_speed(s.initial[3]);
+    auto r=fixture_recipe(c,terminal_speed,*cruise);double terminal;
+    if(!terminal_distance(terminal_speed,*cruise,c.physics,r,terminal))return fail("physical_terminal_construction");
     double release=c.activation+rng.uniform(c.min_delay,c.max_delay);
     if(id%8==0)release=c.activation+c.min_delay;
     if(repair&&mode=="departure")release=c.activation+(repair->side()==0?c.min_delay:c.max_delay);
@@ -141,7 +144,12 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     }
     const Point direction{std::cos(heading),std::sin(heading)},normal{-direction[1],direction[0]};
     Point gate{c.target[0]-terminal*direction[0],c.target[1]-terminal*direction[1]};
-    const double lead=s.initial[3]*(6+3*(id%5)+c.approach_lead_extra_s);Point join{gate[0]-lead*direction[0],gate[1]-lead*direction[1]};
+    double lead=s.initial[3]*(6+3*(id%5)+c.approach_lead_extra_s);
+    if(c.operating_schedule) {
+        const double transition=std::abs(terminal_speed*terminal_speed-c.phase_speeds[2]*c.phase_speeds[2])/(2*c.speed_acceleration);
+        lead=std::max(terminal_speed*(6+3*(id%5)),transition+8*std::max(terminal_speed,c.phase_speeds[2]))+terminal_speed*c.approach_lead_extra_s;
+    }
+    Point join{gate[0]-lead*direction[0],gate[1]-lead*direction[1]};
     if(repair&&mode=="lateral") {
         const Point start{s.initial[0],s.initial[1]},delta=difference(join,start);
         const auto side=repair->side();const auto& own=repair->conflict.positions[side];const auto& other=repair->conflict.positions[1-side];
@@ -165,6 +173,7 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     r.yaw_rate=s.yaw_rate;r.release=release;r.minimum_hold=hold.value_or(c.level_hold);r.speed_end=speed_end;
     r.heading=heading;r.latest_arrival=c.latest_arrival;r.rich=c.cruise_levels>1||c.smooth_speed;
     r.tangent_approach=c.tangent_approach;
+    r.operating_schedule=c.operating_schedule;r.phase_speeds=c.phase_speeds;r.speed_acceleration=c.speed_acceleration;
     r.gate=gate;r.direction=direction;r.normal=normal;r.target=c.target;r.levels=levels;
     r.speed_reference=speed;r.speed_derivative=speed_derivative;r.waypoints=waypoints;
     auto first=prefix(s.initial,c.physics,r);if(!first.accepted())return {{},first.rejection};
@@ -182,6 +191,11 @@ ProposalResult physical_proposal(const Designation& s,const PlanningSettings& c,
     plan.phases=std::move(first.phases);plan.phases.insert(plan.phases.end(),tail.phases.begin(),tail.phases.end());
     plan.routing_mode=routing;if(levels.size()>1)plan.levels=levels;
     if(c.smooth_speed){plan.speed_reference=std::move(speed);plan.has_speed_reference=true;}
+    if(c.operating_schedule) {
+        plan.speed_reference=std::move(first.speed_reference);
+        plan.speed_reference.insert(plan.speed_reference.end(),tail.speed_reference.begin()+1,tail.speed_reference.end());
+        plan.has_speed_reference=true;
+    }
     for(std::size_t k=0;k<plan.states.size();++k) {
         auto projected=project_state(plan.states[k],plan.controls[std::min(k,plan.controls.size()-1)],c.physics);
         if(k){plan.acceleration.push_back((projected[3]-plan.projected.back()[3])/plan.dt);plan.vertical_acceleration.push_back((projected[5]-plan.projected.back()[5])/plan.dt);}

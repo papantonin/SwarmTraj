@@ -14,9 +14,12 @@ aircraft, planner constraints or numerical safety assertions.
 
 The angle is a mission requirement rather than an aerodynamic parameter. The
 profile keeps the absolute flight-path envelope distinct (45 degrees). Operating
-speeds do not automatically switch between phases: choosing `dive` currently
-uses that setpoint for the whole mission. This is not a 100-to-175 km/h transition
-experiment.
+speeds are used by the launcher's explicit `--phase-speeds` mode: initial loiter
+at 25.5 m/s, climb at 27 m/s when needed, transit at 100 km/h, terminal dive at
+175 km/h, deceleration and recovery, then 100 km/h cruise. Reference speeds slew
+at at most 1.5 m/s²; actual speeds follow integrated thrust/drag dynamics.
+Without this flag, `--flight-regime dive` retains the historical constant
+175 km/h request. A speed reference alone never establishes actual attainment.
 
 ## Assumed airframe and capabilities
 
@@ -71,10 +74,12 @@ energy storage, actuator sizing, inertia and stability remain unmodeled.
 
 ## Run the companion mission
 
-The launcher now requests four aircraft at the dive setpoint and a 30-degree
+The launcher now requests four aircraft with phase-dependent speeds and a 30-degree
 descending passage. Initial altitudes are 500, 525, 550 and 575 m; cruise
 proposals remain 500–550 m, target `(3000, 0, 200)` m, ceiling 700 m and horizon
-240 s. Arrival sides span 180 degrees, with four directions spaced by 60 degrees.
+420 s. This explicitly longer observation horizon covers slower transit and
+recovery; the planner never extends a requested horizon or arrival deadline.
+Arrival sides span 180 degrees, with four directions spaced by 60 degrees.
 The geometric assignment chooses which aircraft uses each direction; these
 horizontal approach directions are distinct from the 30-degree vertical slope.
 
@@ -106,6 +111,9 @@ bash examples/scenarios/compact_5kg_30deg.sh
 # Same request without windows.
 bash examples/scenarios/compact_5kg_30deg.sh --no-gui
 
+# Reproduce the earlier constant-175 km/h mission input and 240 s horizon.
+bash examples/scenarios/compact_5kg_30deg.sh --no-gui --no-phase-speeds --horizon 240
+
 # Separate level-cruise experiment at 100 km/h.
 bash examples/scenarios/compact_5kg_30deg.sh --no-gui \
   --num-drones 1 --approach-spread 0 \
@@ -121,6 +129,17 @@ no altitude floor or arrival requirement was relaxed. A 2 m target and a
 zero-airbrake variant are deliberately rejected under the same model.
 
 ## Verification and limits
+
+The four-aircraft operating-speed trial passed full-horizon native planning,
+independent Python replay and simulated execution. All four aircraft attained
+cruise before contact, the declared terminal speed at contact, and recovered
+cruise. Actual contacts occurred at 182.08, 107.49, 203.68 and 91.93 s; the
+execution pair lower bound was 205.04 m. These timings cannot be interpreted
+as an algorithm-only speedup against constant-175 km/h trials: initial speeds
+and the requested horizon differ. Strict single-level profiles are currently
+required; combining operating speeds with smooth or mixed profile modes is
+rejected explicitly. Shared PX4 scenario export also rejects this mode until
+its schema and native aircraft support it.
 
 The headless cruise and dive missions both passed the point-mass execution
 observer checks. The observed dive passage angle was approximately 30 degrees.

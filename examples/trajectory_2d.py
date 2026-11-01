@@ -73,7 +73,9 @@ def main():
     parser.add_argument("--descent-angle", type=float, default=None, metavar="DEG",
                         help="Common downward flight-path angle at XYZ passage, followed by recovery (default 30° in common XYZ mode)")
     parser.add_argument('--flight-regime', choices=('loiter', 'climb', 'cruise', 'descent', 'dive'),
-                        help='Use the profile operating airspeed as the mission-wide setpoint; no automatic phase switching')
+                        help='Profile mission-wide airspeed, or terminal cruise/descent/dive regime with --phase-speeds')
+    parser.add_argument('--phase-speeds',action=argparse.BooleanOptionalAction,default=False,
+                        help='Use own profile speeds by phase; flight-regime then selects the terminal regime')
     parser.add_argument("--airspeed", type=float, help="Requested TOTAL airspeed (m/s); default: profile cruise speed when declared, otherwise 12")
     parser.add_argument("--drone-speed", type=float, action="append", metavar="M_S",
                         help="Individual airspeed; repeat once per drone, in ID order (overrides airspeed)")
@@ -255,8 +257,17 @@ def main():
                                              spacing=args.loiter_spacing)
         if args.flight_regime is not None and (args.airspeed is not None or args.drone_speed is not None):
             raise ValueError('flight-regime cannot be combined with explicit airspeed/drone-speed')
+        if args.phase_speeds and (args.airspeed is not None or args.drone_speed is not None):
+            raise ValueError('phase-speeds cannot be combined with explicit airspeed/drone-speed')
+        if args.phase_speeds and args.flight_regime in ('loiter','climb'):
+            raise ValueError('phase-speeds terminal regime must be cruise, descent or dive')
         profiles_by_id = dict(aircraft_profiles)
         def requested_speed(snapshot):
+            if args.phase_speeds:
+                profile=profiles_by_id.get(snapshot.drone_id,aircraft_profile)
+                if profile is None:
+                    raise ValueError('phase-speeds requires aircraft profiles with declared operating speeds')
+                return profile.airspeed_for('loiter')
             if args.airspeed is not None:
                 return args.airspeed
             profile = profiles_by_id.get(snapshot.drone_id, aircraft_profile)
@@ -282,6 +293,9 @@ def main():
         obstacles += tuple(Obstacle.cylinder(*values) for values in (args.obstacle_cylinder or []))
         obstacles += tuple(Obstacle.box(*values) for values in (args.obstacle_box or []))
         config = Config(seed=args.seed, target=tuple(args.target), horizon=args.horizon,
+                        speed_schedule='operating' if args.phase_speeds else 'constant',
+                        terminal_regime=(args.flight_regime or ('dive' if (args.descent_angle if args.descent_angle is not None else
+                            (30 if args.arrival_mode=='common' else 0))>0 else 'cruise')) if args.phase_speeds else 'dive',
                         arrival_deadline=args.arrival_deadline, post_arrival_time=args.post_arrival_time,
                         obstacles=obstacles, obstacle_clearance=args.obstacle_clearance,
                         obstacle_routing=args.obstacle_routing,

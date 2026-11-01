@@ -23,6 +23,7 @@ struct Path {
     std::vector<Phase> phases;
     std::string rejection;
     double arrival = 0.;
+    std::vector<double> speed_reference;
     bool accepted() const { return rejection.empty(); }
 };
 struct Recipe {
@@ -31,6 +32,9 @@ struct Recipe {
     double target_z, target_radius, position_error, latest_arrival;
     bool rich;
     bool tangent_approach=false;
+    bool operating_schedule=false;
+    std::array<double,5> phase_speeds{};
+    double speed_acceleration=.3;
     Point gate, direction, normal, target;
     std::vector<double> levels, speed_reference, speed_derivative;
     std::vector<Point> waypoints;

@@ -189,6 +189,9 @@ class AircraftProfile:
             raise ValueError('this aircraft profile does not declare operating speeds')
         return getattr(self.speeds, regime + '_airspeed_m_s')
 
+    def operating_speed_values(self):
+        return tuple(self.airspeed_for(regime) for regime in ('loiter','climb','cruise','descent','dive'))
+
     def to_dict(self):
         def group(mapping):
             return {external: float(getattr(getattr(self, owner), attribute))
@@ -230,11 +233,14 @@ class AircraftProfile:
             raise ValueError('aircraft profiles require the coupled 3D point-mass backend')
         if config.aircraft_profiles:
             raise ValueError('apply a common profile before assigning per-drone profiles')
-        return replace(config, **self.physical_config())
+        schedule={'operating_airspeeds':self.operating_speed_values()} if config.speed_schedule=='operating' else {}
+        return replace(config, **self.physical_config(), **schedule)
 
     def require_matches(self, config):
         if not config.coupled_flight or config.aircraft_profiles or any(getattr(config, key) != value for key, value in self.physical_config().items()):
             raise ValueError('effective physical configuration differs from the recorded aircraft profile')
+        if config.speed_schedule=='operating' and config.operating_airspeeds!=self.operating_speed_values():
+            raise ValueError('effective operating speeds differ from the recorded aircraft profile')
 
 
 def reference_aircraft_profile():

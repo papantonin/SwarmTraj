@@ -70,6 +70,9 @@ class Config:
     speed_profile: str = "constant"
     speed_profile_range: tuple[float, float] | None = None
     speed_profile_acceleration: float = .3
+    speed_schedule: str = 'constant'
+    operating_airspeeds: tuple | None = None  # Resolved own (loiter, climb, cruise, descent, dive) values.
+    terminal_regime: str = 'dive'
     profile_policy: str = "strict"  # Mixed families are an explicit opt-in, not a fallback.
     passage_guidance: str = "none"  # Offline intermediate-cell speed fitting, not departure retiming.
     candidate_guidance: str = "none"  # Own-rejection reference adjustments; never weaker validators.
@@ -83,7 +86,15 @@ class Config:
         if not self.aircraft_profiles:
             return self
         profile = self.profile_for(drone_id)
-        return replace(self, aircraft_profiles=(), **profile.physical_config())
+        schedule = {'operating_airspeeds': profile.operating_speed_values()} if self.speed_schedule=='operating' else {}
+        return replace(self, aircraft_profiles=(), **profile.physical_config(), **schedule)
+
+    def terminal_speed(self, initial_speed):
+        if self.speed_schedule=='constant':
+            return initial_speed
+        if self.operating_airspeeds is None:
+            raise ValueError('operating schedule requires resolved own aircraft speeds')
+        return self.operating_airspeeds[{'cruise':2,'descent':3,'dive':4}[self.terminal_regime]]
 
     def profile_for(self, drone_id):
         for identifier, profile in self.aircraft_profiles:
@@ -246,6 +257,20 @@ class Config:
             raise ValueError("passage guidance requires coupled 3D, grid reservations and smooth speed permission")
         if not np.isfinite(self.speed_profile_acceleration) or self.speed_profile_acceleration <= 0:
             raise ValueError("speed_profile_acceleration must be finite and positive")
+        if self.speed_schedule not in ('constant','operating'):
+            raise ValueError('speed_schedule must be constant or operating')
+        if self.terminal_regime not in ('cruise','descent','dive'):
+            raise ValueError('terminal_regime must be cruise, descent or dive')
+        if self.speed_schedule=='operating' and (not self.coupled_flight or self.speed_profile!='constant'
+                or self.cruise_levels!=1 or self.profile_policy!='strict'):
+            raise ValueError('operating schedule requires strict single-level coupled flight without a smooth-profile overlay')
+        if self.operating_airspeeds is not None:
+            values=self.operating_airspeeds
+            if (not isinstance(values,(tuple,list)) or len(values)!=5 or any(type(v) not in (int,float) for v in values)
+                    or not np.all(np.isfinite(values)) or self.aircraft_profiles
+                    or any(not max(self.limits.min_speed,self.flight.stall_speed*self.flight.stall_margin)<=v<=self.limits.max_speed for v in values)):
+                raise ValueError('operating_airspeeds must contain five finite own speeds within the physical envelope')
+            object.__setattr__(self,'operating_airspeeds',tuple(float(v) for v in values))
         if self.dimensions not in (2, 3):
             raise ValueError("dimensions must be 2 or 3")
         if self.flight_model not in ("point_mass", "legacy"):
@@ -645,6 +670,8 @@ def _plan_mission(snapshots: tuple[Snapshot, ...], config: Config):
             raise ValueError("invalid snapshot")
         if not local.limits.min_speed <= s.speed <= local.limits.max_speed:
             return Result("invalid_initial_state", "Initial airspeed violates the model limits.")
+        if local.speed_schedule=='operating' and abs(s.speed-local.operating_airspeeds[0])>1e-8:
+            return Result("invalid_initial_state", "Initial airspeed must match the declared loiter speed.")
         if config.speed_profile != "constant" and not config.speed_profile_range[0] <= s.speed <= config.speed_profile_range[1]:
             return Result("invalid_initial_state", "Initial airspeed must lie within the requested speed profile range.")
         if abs(s.state[3]) > local.limits.max_rate(s.speed):

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
 namespace swarmtraj {
@@ -45,18 +46,43 @@ struct Builder {
     const Parameters& p; const Recipe& r; Path path; std::size_t offset=0;
     Builder(const State& s,const Parameters& p_,const Recipe& r_,std::size_t offset_=0):p(p_),r(r_),offset(offset_) {
         path.states.reserve(r.steps-offset+1);path.controls.reserve(r.steps-offset);path.states.push_back(s);
+        if(r.operating_schedule){path.speed_reference.reserve(r.steps-offset+1);path.speed_reference.push_back(offset?r.speed:s[3]);}
     }
     std::size_t step() const { return offset+path.controls.size(); }
     const State& state() const { return path.states.back(); }
-    bool append(const Control& u) {
+    bool append(const Control& u,std::optional<double> speed_reference={}) {
         if(step()>=r.steps)return false;
         State next;
         if(!checked_step(state(),u,p,next))return false;
-        path.controls.push_back(u);path.states.push_back(next);return true;
+        path.controls.push_back(u);path.states.push_back(next);
+        if(r.operating_schedule)path.speed_reference.push_back(speed_reference.value_or(path.speed_reference.back()));
+        return true;
     }
     void phase(const std::string& name,std::size_t first) { if(step()>first)path.phases.push_back({name,first,step()}); }
     Path fail(const char* reason) { path.rejection=reason;return std::move(path); }
 };
+bool scheduled_step(Builder& b,double desired_speed,double altitude,double heading,double yaw=0.) {
+    const double old=b.path.speed_reference.back();
+    const double next=old+clip(desired_speed-old,-b.r.speed_acceleration*b.p.dt,b.r.speed_acceleration*b.p.dt);
+    auto u=guidance(b.state(),reference(b.state(),old,altitude,heading,b.p),yaw,(next-old)/b.p.dt,b.p);
+    // Leave a lift allocation reserve during changing-speed proposal rollout.
+    // This is a stricter command choice, not a changed physical stall limit.
+    u[2]=std::min(u[2],.98*ceiling(b.state()[3],b.p));
+    return b.append(u,next);
+}
+bool prepare_operating_cruise(Builder& b,double yaw) {
+    std::size_t held=0;
+    while(b.step()<b.r.steps) {
+        const auto& s=b.state();
+        const bool ready=settled(s,b.r.cruise)&&std::abs(s[3]-b.r.phase_speeds[2])<.05
+            &&std::abs(b.path.speed_reference.back()-b.r.phase_speeds[2])<1e-8;
+        held=ready?held+1:0;if(held*b.p.dt>=b.r.minimum_hold)return true;
+        const double target=s[2]<b.r.cruise-.2?b.r.phase_speeds[1]:
+            s[2]>b.r.cruise+.2?b.r.phase_speeds[3]:b.r.phase_speeds[2];
+        if(!scheduled_step(b,target,b.r.cruise,s[4],yaw))return false;
+    }
+    return false;
+}
 bool pitch(Builder& b,double speed,double angle,std::size_t budget) {
     for(std::size_t k=0;k<budget;++k) {
         if(std::abs(b.state()[5]-angle)<=1e-4)return true;
@@ -184,6 +210,11 @@ Path prefix(const State& initial,const Parameters& p,const Recipe& r) {
     Builder b(initial,p,r);
     while(b.step()*p.dt<r.release-1e-10)if(!b.append(trim(b.state(),p)))return b.fail("physical_loiter");
     b.phase("loiter",0);
+    if(r.operating_schedule) {
+        const auto first=b.step();
+        if(!prepare_operating_cruise(b,r.yaw_rate))return b.fail("physical_operating_cruise_preparation");
+        b.phase("cruise_preparation",first);
+    }
     if(r.rich) {
         auto levels=r.levels;if(levels.size()>1)levels.push_back(r.cruise);
         for(std::size_t index=0;index<levels.size();++index) {
@@ -200,6 +231,8 @@ Path prefix(const State& initial,const Parameters& p,const Recipe& r) {
         }
     }
     const auto transit=b.step();std::size_t waypoint=0,held=0;bool on_line=false;
+    const double transit_speed=r.operating_schedule?r.phase_speeds[2]:r.speed;
+    std::size_t segment_start=transit;std::string segment="transit";
     std::vector<RouteSample> route;std::size_t cursor=0;
     if(r.tangent_approach) {
         if(b.step()>=r.steps)return b.fail("physical_transit_horizon");
@@ -224,7 +257,7 @@ Path prefix(const State& initial,const Parameters& p,const Recipe& r) {
     }
     while(b.step()<r.steps) {
         State s=b.state();held=settled(s,r.cruise)?held+1:0;
-        if(!r.tangent_approach&&!on_line && distance_xy(s,r.waypoints[waypoint])<2*r.speed) {
+        if(!r.tangent_approach&&!on_line && distance_xy(s,r.waypoints[waypoint])<2*transit_speed) {
             if(waypoint+1<r.waypoints.size())++waypoint;else on_line=true;
         }
         double heading,yaw_feedforward=0.;
@@ -239,24 +272,34 @@ Path prefix(const State& initial,const Parameters& p,const Recipe& r) {
             if(cursor+2>=route.size())on_line=true;
         }
         if(on_line) {
+            if(r.operating_schedule&&segment=="transit") {
+                b.phase(segment,segment_start);segment_start=b.step();segment="approach_acceleration";
+            }
+            if(r.operating_schedule&&segment=="approach_acceleration"&&std::abs(b.path.speed_reference.back()-r.speed)<1e-8) {
+                b.phase(segment,segment_start);segment_start=b.step();segment="terminal_alignment";
+            }
             double cross=along(s,r.gate,r.normal),a=along(s,r.gate,r.direction);
             heading=r.heading-std::atan2(cross,1.5*r.speed);
             if(a>=0) {
                 const double prev=b.step()>transit?along(b.path.states[b.path.states.size()-2],r.gate,r.direction):a;
-                if(std::abs(prev)<std::abs(a)) {b.path.states.pop_back();b.path.controls.pop_back();s=b.state();cross=along(s,r.gate,r.normal);}
+                if(std::abs(prev)<std::abs(a)) {b.path.states.pop_back();b.path.controls.pop_back();
+                    if(r.operating_schedule)b.path.speed_reference.pop_back();
+                    s=b.state();cross=along(s,r.gate,r.normal);}
                 if(std::abs(wrap(s[4]-r.heading))>.4*pi/180||std::abs(cross)>.5||!settled(s,r.cruise)||std::abs(s[3]-r.speed)>.05||held*p.dt<r.minimum_hold)return b.fail("physical_approach_alignment");
                 break;
             }
         } else if(r.tangent_approach) {
             const auto& point=route[cursor];
             const double cross=-(s[0]-point.x)*std::sin(point.heading)+(s[1]-point.y)*std::cos(point.heading);
-            heading=point.heading-std::atan2(cross,1.5*r.speed);
+            heading=point.heading-std::atan2(cross,1.5*transit_speed);
             yaw_feedforward=s[3]*std::cos(s[5])*point.curvature;
         } else heading=std::atan2(r.waypoints[waypoint][1]-s[1],r.waypoints[waypoint][0]-s[0]);
-        if(!b.append(guidance(s,reference(s,r.speed,r.cruise,heading,p),yaw_feedforward,0.,p)))return b.fail("physical_transit_envelope");
+        if(r.operating_schedule) {
+            if(!scheduled_step(b,on_line?r.speed:transit_speed,r.cruise,heading,yaw_feedforward))return b.fail("physical_transit_envelope");
+        } else if(!b.append(guidance(s,reference(s,r.speed,r.cruise,heading,p),yaw_feedforward,0.,p)))return b.fail("physical_transit_envelope");
     }
     if(b.step()>=r.steps)return b.fail("physical_transit_horizon");
-    b.phase("transit",transit);
+    if(r.operating_schedule)b.phase(segment,segment_start);else b.phase("transit",transit);
     auto first=b.step();
     if(!b.append(control(b.state(),r.speed,-b.state()[5]/p.dt,p,true))||std::abs(b.state()[6])>1e-12)return b.fail("physical_alignment_envelope");
     b.phase("alignment",first);first=b.step();
@@ -292,6 +335,29 @@ Path onward(const State& initial,const Parameters& p,const Recipe& r,std::size_t
     validate(p);
     if(r.steps>1000000||start>r.steps)throw std::invalid_argument("invalid onward horizon");
     Builder b(initial,p,r,start);std::size_t recovered=r.steps,waypoint=0;bool settled_once=false;
+    if(r.operating_schedule) {
+        const auto deceleration=b.step();const double hold_altitude=initial[2];std::size_t held=0;
+        const double recovery_speed=initial[2]<r.cruise-.2?r.phase_speeds[1]:
+            initial[2]>r.cruise+.2?r.phase_speeds[3]:r.phase_speeds[2];
+        while(b.step()<r.steps) {
+            const bool ready=std::abs(b.state()[3]-recovery_speed)<.05&&std::abs(b.path.speed_reference.back()-recovery_speed)<1e-8;
+            held=ready?held+1:0;if(held*p.dt>=1.)break;
+            if(!scheduled_step(b,recovery_speed,hold_altitude,b.state()[4]))return b.fail("physical_operating_deceleration");
+        }
+        b.phase("deceleration",deceleration);const auto recovery=b.step();
+        if(!prepare_operating_cruise(b,0.))return b.fail("physical_operating_recovery_horizon");
+        b.phase("cruise_recovery",recovery);const auto onward=b.step();
+        while(b.step()<r.steps) {
+            double heading=b.state()[4];
+            if(!waypoints.empty()) {
+                const auto& s=b.state();if(waypoint+1<waypoints.size()&&distance_xy(s,waypoints[waypoint])<2*r.phase_speeds[2])++waypoint;
+                heading=std::atan2(waypoints[waypoint][1]-s[1],waypoints[waypoint][0]-s[0]);
+            }
+            if(!scheduled_step(b,r.phase_speeds[2],r.cruise,heading))return b.fail("physical_cruise_recovery");
+        }
+        if(!settled(b.state(),r.cruise)||std::abs(b.state()[3]-r.phase_speeds[2])>.1)return b.fail("physical_recovery_horizon");
+        b.phase("onward",onward);return std::move(b.path);
+    }
     while(b.step()<r.steps) {
         if(!settled_once && settled(b.state(),r.cruise)){recovered=b.step();settled_once=true;}
         auto u=altitude_control(b.state(),r.speed,r.cruise,p);

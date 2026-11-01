@@ -117,7 +117,7 @@ def restore_catalog_types(record):
 
 def require_planner():
     module=native.require_native()
-    if module.build_info().get('planning_api') != 2:
+    if module.build_info().get('planning_api') != 3:
         raise RuntimeError('complete native planner unavailable; rebuild with ./scripts/build_native.sh')
     return module
 
@@ -193,7 +193,7 @@ def extend_catalog(task):
     from .production import require_production
     require_production(config)
     module=native.require_native()
-    if module.build_info().get('catalog_api') != 2:
+    if module.build_info().get('catalog_api') != 3:
         raise RuntimeError('native catalog kernel unavailable; rebuild with ./scripts/build_native.sh')
     if config.generator_mode not in ('physical_mission','physical_recovery_seed'):
         raise ValueError('native catalogs require physical mission generation')

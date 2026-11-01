@@ -68,6 +68,13 @@ std::optional<Contact> first_entry(const Candidate& path,const ValidationSetting
 Projection project_state(const State& s,const Control& u,const Parameters& p) {
     return {s[0],s[1],s[4],derivative(s,u,p)[4],s[2],s[3]*std::sin(s[5])};
 }
+void validate_operating_settings(const ValidationSettings& c) {
+    if(!c.operating_schedule)return;
+    if(c.terminal_index<2||c.terminal_index>4||!std::isfinite(c.speed_acceleration)||c.speed_acceleration<=0
+        ||c.smooth_speed||c.cruise_levels!=1)throw std::invalid_argument("invalid operating schedule settings");
+    for(double v:c.phase_speeds)if(!std::isfinite(v)||v<std::max(c.physics.min_speed,c.physics.stall_speed*c.physics.stall_margin)
+        ||v>c.physics.max_speed)throw std::invalid_argument("operating speed outside physical envelope");
+}
 State sample_candidate(const Candidate& path,double time,const Parameters& p) {
     auto index=static_cast<std::size_t>(std::max(0.,std::floor(std::max(time,0.)/path.dt+1e-9)));
     index=std::min(index,path.controls.size()-1);
@@ -101,7 +108,7 @@ double clearance(const Candidate& path,const std::vector<Solid>& obstacles) {
 
 ValidationResult validate_candidate(const Candidate& path,const State& initial,double yaw_rate,
     std::optional<double> requested_cruise,const ValidationSettings& c) {
-    validate(c.physics);const auto& p=c.physics;const auto& s=path.states;const auto& u=path.controls;
+    validate(c.physics);validate_operating_settings(c);const auto& p=c.physics;const auto& s=path.states;const auto& u=path.controls;
     auto bad=[](const char* reason){return ValidationResult{reason,{}};};
     if(!c.steps||s.size()!=c.steps+1||u.size()!=c.steps||path.projected.size()!=c.steps+1
         ||path.acceleration.size()!=c.steps||path.vertical_acceleration.size()!=c.steps
@@ -152,7 +159,26 @@ ValidationResult validate_candidate(const Candidate& path,const State& initial,d
             if(!found)return bad("validation_cruise_level_not_reached");
         }
     } else if(!path.levels.empty())return bad("validation_unrequested_cruise_levels");
-    if(c.smooth_speed) {
+    if(c.operating_schedule) {
+        const auto& reference=path.speed_reference;
+        if(!path.has_speed_reference||reference.size()!=s.size()
+            ||!close(reference.front(),c.phase_speeds[0],1e-8)
+            ||!close(reference.back(),c.phase_speeds[2],1e-8)
+            ||!close(s.back()[3],c.phase_speeds[2],.2))return bad("validation_operating_reference");
+        std::size_t cruise_run=0,terminal_run=0;bool cruise_seen=false,terminal_seen=false;
+        for(std::size_t k=0;k<s.size();++k) {
+            if(!std::isfinite(reference[k])||reference[k]<p.min_speed-1e-8||reference[k]>p.max_speed+1e-8
+                ||(k&&std::abs(reference[k]-reference[k-1])>c.speed_acceleration*path.dt+1e-8))return bad("validation_operating_reference");
+            const bool before=k*path.dt>=path.release&&k*path.dt<path.arrival;
+            const bool cruising=before&&close(reference[k],c.phase_speeds[2],1e-8)&&close(s[k][3],c.phase_speeds[2],.2)
+                &&close(s[k][2],cruise,.2)&&std::abs(s[k][3]*std::sin(s[k][5]))<=.1;
+            const bool terminal=before&&close(reference[k],c.terminal_speed(initial[3]),1e-8)&&close(s[k][3],c.terminal_speed(initial[3]),.2);
+            cruise_run=cruising?cruise_run+1:0;terminal_run=terminal?terminal_run+1:0;
+            cruise_seen|=cruise_run&&(cruise_run-1)*path.dt>=1-1e-9;
+            terminal_seen|=terminal_run&&(terminal_run-1)*path.dt>=1-1e-9;
+        }
+        if(!cruise_seen||!terminal_seen)return bad("validation_operating_attainment");
+    } else if(c.smooth_speed) {
         const auto& reference=path.speed_reference;
         if(!path.has_speed_reference||reference.size()!=s.size())return bad("validation_speed_reference");
         double low=std::numeric_limits<double>::infinity(),high=-low,actual_low=low,actual_high=high;
@@ -173,6 +199,7 @@ ValidationResult validate_candidate(const Candidate& path,const State& initial,d
     std::optional<Contact> contact;
     try {contact=first_entry(path,c);}catch(const std::runtime_error&){return bad("validation_contact_event_unresolved");}
     if(!contact)return bad("validation_contact_event");
+    if(c.operating_schedule&&!close(contact->state[3],c.terminal_speed(initial[3]),.2))return bad("validation_operating_terminal_speed");
     if(contact->time<path.release-1e-7)return bad("validation_contact_before_departure");
     if(path.approach&&!sector(contact->state,path,c))return bad("validation_contact_sector");
     ValidationResult result{"",contact->time};

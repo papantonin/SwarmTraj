@@ -50,13 +50,16 @@ def reference_window(reference, local_time, local_duration):
 
 def require_validation_native():
     module = require_native()
-    if module.build_info().get('validation_api') != 1:
+    if module.build_info().get('validation_api') != 2:
         raise RuntimeError('C++ validation kernel is unavailable; rebuild with ./scripts/build_native.sh')
     return module
 
 
 def validation_options(config):
     return dict(steps=round(config.horizon/config.dt), activation=float(config.activation_time),
+        operating_schedule=config.speed_schedule=='operating',
+        phase_speeds=_array(config.operating_airspeeds if config.operating_airspeeds is not None else (0.,)*5),
+        terminal_index={'cruise':2,'descent':3,'dive':4}[config.terminal_regime],
         min_delay=float(config.min_extra_loiter), max_delay=float(config.max_extra_loiter),
         latest_arrival=float(config.latest_nominal_arrival), target=_array(config.target),
         target_altitude=config.target_altitude, target_radius=float(config.target_radius),

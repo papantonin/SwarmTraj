@@ -85,4 +85,28 @@ def execution_failures(report):
             keys.append('contact_events_verified')
     if report.get('reservation_policy') == 'grid':
         keys.append('reservation_adherence_verified')
+    if report.get('speed_schedule') == 'operating':
+        keys.append('operating_speeds_verified')
     return [key for key in keys if not report[key]]
+
+
+def operating_speed_diagnostics(states, times, plans, configs, contacts):
+    """Observer-only checks of attained airspeeds, never controller inputs."""
+    checks = []
+    for k, (plan, config, contact) in enumerate(zip(plans, configs, contacts)):
+        own = states[:, k]
+        speeds = config.operating_airspeeds
+        mask = ((times >= plan.release_time) & (times < (contact.time if contact else 0))
+                & (np.abs(own[:, 3]-speeds[2]) <= .2)
+                & (np.abs(own[:, 2]-plan.cruise_altitude) <= .2)
+                & (np.abs(air_velocity(own)[:, 2]) <= .1))
+        edges = np.flatnonzero(np.diff(np.r_[False, mask, False]))
+        cruise_held = any(times[end-1]-times[start] >= 1-1e-9
+                          for start, end in zip(edges[::2], edges[1::2]))
+        checks.append(dict(drone_id=plan.drone_id,
+            initial_loiter=bool(abs(own[0, 3]-speeds[0]) <= .2),
+            cruise_before_contact=bool(cruise_held),
+            terminal_at_contact=bool(contact is not None and abs(contact.state[3]-config.terminal_speed(plan.speed)) <= .2),
+            recovered_cruise=bool(abs(own[-1, 3]-speeds[2]) <= .2)))
+    return dict(speed_schedule='operating', operating_speed_checks=checks,
+                operating_speeds_verified=all(all(v for key, v in row.items() if key != 'drone_id') for row in checks))

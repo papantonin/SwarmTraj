@@ -110,6 +110,14 @@ inline ValidationSettings settings(PyObject* d,const Parameters& p) {
     auto* range=get(d,"cruise_range");if(range!=Py_None)c.cruise_range=vector<2>(range);
     c.cruise_levels=size(get(d,"cruise_levels"));c.smooth_speed=boolean(get(d,"smooth_speed"));
     c.speed_range=vector<2>(get(d,"speed_range"));c.speed_acceleration=real(d,"speed_acceleration");
+    if(auto* option=PyDict_GetItemString(d,"operating_schedule"))c.operating_schedule=boolean(option);
+    if(c.operating_schedule) {
+        c.phase_speeds=vector<5>(get(d,"phase_speeds"));c.terminal_index=size(get(d,"terminal_index"));
+        if(c.terminal_index<2||c.terminal_index>4||c.speed_acceleration<=0||c.smooth_speed||c.cruise_levels!=1)
+            throw std::invalid_argument("invalid operating schedule settings");
+        for(double speed:c.phase_speeds)if(speed<std::max(p.min_speed,p.stall_speed*p.stall_margin)||speed>p.max_speed)
+            throw std::invalid_argument("operating speed outside physical envelope");
+    }
     c.clock_error=real(d,"clock_error");c.aircraft_radius=real(d,"aircraft_radius");c.obstacle_clearance=real(d,"obstacle_clearance");
     auto solids=matrix<7>(get(d,"obstacles"));
     for(const auto& s:solids) {
