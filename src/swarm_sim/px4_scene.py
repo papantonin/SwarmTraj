@@ -41,8 +41,10 @@ def display_polyline(points, tolerance=.5):
     return points[sorted(keep)].copy()
 
 
-def add_reference_visuals(world, plan, trajectory_only=False):
+def add_reference_visuals(world, plan, trajectory_only=False, radius_m=.6):
     """Cyan to arrival, muted blue afterwards; no takeoff/landing invented."""
+    if not math.isfinite(radius_m) or radius_m<=0:
+        raise ValueError('positive finite reference display radius required')
     points = np.asarray(plan['flight_states'], dtype=float)[:, :3]
     phase = np.clip(plan['arrival_time']/plan['dt'], 0, len(points)-1)
     index = int(math.floor(phase))
@@ -68,14 +70,14 @@ def add_reference_visuals(world, plan, trajectory_only=False):
             ET.SubElement(visual, 'visibility_flags').text = '1'
             ET.SubElement(visual, 'cast_shadows').text = 'false'
             cylinder = ET.SubElement(ET.SubElement(visual, 'geometry'), 'cylinder')
-            ET.SubElement(cylinder, 'radius').text = '.6'
+            ET.SubElement(cylinder, 'radius').text = str(radius_m)
             ET.SubElement(cylinder, 'length').text = str(length)
             material = ET.SubElement(visual, 'material')
             for field in ('ambient', 'diffuse', 'emissive'):
                 ET.SubElement(material, field).text = color
 
 
-def scene_tree(document, template, asset_root='/workspace/examples/gazebo', airborne_start=False):
+def scene_tree(document, template, asset_root='/workspace/examples/gazebo', airborne_start=False, reference_radius_m=.6):
     tree = ET.parse(template)
     world = tree.getroot().find('world')
     # The generated SDF lives in /runresults, not next to the checked-in assets.
@@ -130,7 +132,7 @@ def scene_tree(document, template, asset_root='/workspace/examples/gazebo', airb
     if z > 0:
         model('swarm_target_beacon', (x, y, z/2), 'cylinder', (.3, z), '1 0.72 0.02 1', annotation=True)
     from .px4_termination import end_behavior
-    add_reference_visuals(world, plan, end_behavior(document) == 'remove-at-target')
+    add_reference_visuals(world, plan, end_behavior(document) == 'remove-at-target',radius_m=reference_radius_m)
     if airborne_start:
         # PX4 attaches to this existing model. It is first at ground level for
         # ordinary estimator/arming initialization; the plugin is inert until

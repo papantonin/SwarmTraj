@@ -176,3 +176,19 @@ six unarmed PX4 servo/motor checks pass. A dedicated 4999 simulation airframe
 preserves the original 4003/Cessna path. Runway flight trials remain failures
 and are retained; native reference/fleet integration is not qualified by the
 lower-level checks. No safety acceptance limits were widened around them.
+
+The compact experimental circuit now has an explicit `--airborne-start` path:
+normal ground readiness/arm, one own-model pose change and one mass-proportional
+impulse per link, followed by independent physical and estimated-state gates.
+It initializes 100 km/h level flight at 80 m with an analytical body-pitch trim.
+PX4 then controls the airframe alone; the initializer only records observations.
+The production Cessna adapter and its speed/altitude bounds remain unchanged.
+See the [warm-start protocol and qualification status](compact_control_model.md#compact-warm-airborne-start).
+
+The explicit compact `swarm-reference` phase now connects an actual C++-generated
+single-aircraft level plan to native PX4 waypoints. The original 100 s plan is
+retained, while observer-only evaluation checks sampled spatial error and target
+passage. The first `(0,0,80)` to `(1800,0,80)` m case passed with maximum error
+8.957 m and target distance 4.464 m. This is a bounded spatial demonstration;
+curved paths, dives and fleet execution remain separate work. See the
+[generated-reference scope](compact_control_model.md#generated-swarmtraj-spatial-reference).

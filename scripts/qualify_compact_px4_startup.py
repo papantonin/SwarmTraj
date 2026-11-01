@@ -3,6 +3,9 @@
 The default is unarmed startup. Explicit --actuator-test drives only the owned
 simulated effectors; --flight-test additionally attempts ordinary takeoff,
 circuit and landing after all readiness/identity/actuator/mission gates pass.
+--airborne-start selects a one-shot warm initialization instead of runway takeoff.
+--flight-phase cruise-turns stops the simulator after the native circuit phase;
+it does not qualify landing or complete the uploaded native mission.
 """
 import argparse
 import hashlib
@@ -22,10 +25,13 @@ from swarm_sim.px4_gazebo import IMAGE,ROOT,PX4_HASH
 from swarm_sim.px4_prototype import build_model
 from swarm_sim.gazebo_force_model import ForceModel
 from swarm_sim.gazebo_control_model import ControlModel,verify_control_plugin
+from swarm_sim.px4_dive_readiness import BRAKE_DEFAULTS,dive_readiness
 from swarm_sim.trajectory2d import load_aircraft_profile
 
 
-def worker(actuator_test=False,flight_test=False):
+def worker(actuator_test=False,flight_test=False,airborne_start=False,flight_phase='circuit-landing'):
+    if airborne_start and not flight_test:raise ValueError('airborne initialization requires a flight trial')
+    actuator_test=actuator_test or flight_test
     if not Path('/.dockerenv').exists() or os.environ.get('SWARM_COMPACT_PX4_STARTUP')!='1' or os.environ.get('PX4_SIM_MODEL')!='gz_compact_5kg_prototype':
         raise ValueError('managed isolated compact SITL startup only')
     from mavsdk import Mavsdk,Configuration,ComponentType
@@ -97,10 +103,15 @@ def worker(actuator_test=False,flight_test=False):
                 report['actuator_checks']=checks
             report.update(actuator_checks=checks,actuator_chain_verified=all(c['passed'] for c in checks))
             report['passed']=report['passed'] and report['actuator_chain_verified']
+            keys={'FW_AIRSPD_MAX','FW_T_SINK_MAX','FW_P_LIM_MIN',*BRAKE_DEFAULTS}
+            integers={'CA_SV_CS_COUNT','CA_SV_CS4_TYPE','SIM_GZ_SV_FUNC6'}
+            values={key:(params.get_param_int(key) if key in integers else params.get_param_float(key)) for key in keys}
+            report['dive_readiness']=dive_readiness(force,controls,values)
+            (output/'dive-readiness.json').write_text(json.dumps(report['dive_readiness'],indent=2)+'\n')
         if flight_test:
             if not report.get('actuator_chain_verified'):raise RuntimeError('own PX4 actuator chain must pass before a flight trial')
             from swarm_sim.px4_compact_trial import trial
-            flight=trial(system,telemetry,params,latest,output)
+            flight=trial(system,telemetry,params,latest,output,airborne_start=airborne_start,flight_phase=flight_phase)
             report.update(flight_trial=flight,passed=report['passed'] and flight['passed'],armed=bool(latest.get('armed')))
             report['scope']='startup and actuator gates followed by an opt-in native flight trial; see individual outcomes'
     except BaseException as error:
@@ -113,7 +124,12 @@ def worker(actuator_test=False,flight_test=False):
     return report
 
 
-def qualify(output,library,actuator_test=False,flight_test=False):
+def qualify(output,library,actuator_test=False,flight_test=False,airborne_start=False,flight_phase='circuit-landing',gui=False):
+    if airborne_start and not flight_test:raise ValueError('airborne initialization requires a flight trial')
+    if flight_phase not in ('circuit-landing','cruise-turns','native-brake','swarm-reference') or (flight_phase in ('cruise-turns','native-brake','swarm-reference') and not (flight_test and airborne_start)):
+        raise ValueError('cruise/turn phase requires the explicit warm airborne flight bench')
+    if gui and not flight_test:raise ValueError('GUI requires a flight trial')
+    actuator_test=actuator_test or flight_test
     if importlib.metadata.version('mavsdk')!='4.1.0':raise ValueError('verified MAVSDK 4.1.0 required')
     force=ForceModel(load_aircraft_profile(ROOT/'examples/aircraft/compact_5kg.json'))
     controls=ControlModel.load(ROOT/'examples/gazebo/compact_physics/control_model.json',force)
@@ -125,25 +141,43 @@ def qualify(output,library,actuator_test=False,flight_test=False):
     root=ET.fromstring(sdf)
     plugin=root.find("model/plugin[@name='swarm::CompactPolar']")
     ET.SubElement(plugin,'bench_csv').text='/runresults/actuators.csv'
+    if airborne_start:
+        bootstrap=ET.SubElement(root.find('model'),'plugin',filename='gz-sim-python-system-loader-system',
+                                name='gz::sim::systems::PythonSystemLoader')
+        ET.SubElement(bootstrap,'module_name').text='compact_airborne_bootstrap'
     sdf=ET.tostring(root,encoding='unicode')
     model=output/'models/compact_5kg_prototype';model.mkdir(parents=True);(model/'model.sdf').write_text(sdf)
     shutil.copyfile(library,output/'libcompact_polar.so')
-    tree=ET.parse(ROOT/'examples/gazebo/worlds/default.sdf')
-    tree.find('world/physics/max_step_size').text='0.001'
-    tree.find('world/physics/real_time_update_rate').text='1000'
+    document=None
+    if flight_phase=='swarm-reference':
+        from swarm_sim.px4_compact_reference import generate_compact_reference
+        from swarm_sim.px4_scene import scene_tree
+        document=generate_compact_reference(force.profile)
+        tree=scene_tree(document,ROOT/'examples/gazebo/worlds/default.sdf',reference_radius_m=.12)
+    else:tree=ET.parse(ROOT/'examples/gazebo/worlds/default.sdf')
+    # Warm starts retain the pinned 250 Hz sensor/physics cadence. The 1 ms
+    # contact fixture remains separate for historical cold runway trials.
+    tree.find('world/physics/max_step_size').text='0.004' if airborne_start else '0.001'
+    tree.find('world/physics/real_time_update_rate').text='250' if airborne_start else '1000'
     tree.find('world/gravity').text='0 0 -9.81'
     for node in tree.findall('.//uri')+tree.findall('.//albedo_map'):
         if node.text.startswith('..'):node.text='/workspace/examples/gazebo/'+str(Path('worlds')/node.text)
     tree.write(output/'world.sdf',encoding='unicode')
-    assumptions.update(image=IMAGE,control_api=control_api,plugin_sha256=hashlib.sha256(library.read_bytes()).hexdigest())
+    assumptions.update(image=IMAGE,control_api=control_api,plugin_sha256=hashlib.sha256(library.read_bytes()).hexdigest(),
+        model_sdf_sha256=hashlib.sha256(sdf.encode()).hexdigest(),
+        world_sdf_sha256=hashlib.sha256((output/'world.sdf').read_bytes()).hexdigest(),
+        physics_time_step_s=float(tree.findtext('world/physics/max_step_size')),
+        initialization_mode='warm_airborne' if airborne_start else 'ground',requested_flight_phase=flight_phase,
+        gui_requested=gui,rendering_requested='software')
     (output/'LICENSE.PX4').write_text((ROOT/'examples/gazebo/LICENSE.PX4').read_text())
     assumptions['source_sha256']={str(path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest()
         for path in [Path(__file__).resolve(),ROOT/'src/swarm_sim/px4_compact_trial.py',ROOT/'src/swarm_sim/px4_prototype.py',
                      ROOT/'src/swarm_sim/gazebo_control_model.py',ROOT/'src/swarm_sim/gazebo_force_model.py',
+                     ROOT/'src/swarm_sim/gazebo_trim.py',ROOT/'src/swarm_sim/px4_dive_readiness.py',
                      *sorted((ROOT/'examples/gazebo/compact_physics').glob('*'))] if path.is_file()}
     inherited=subprocess.run(['docker','run','--rm','--network','none','--entrypoint','cat',IMAGE,
         '/opt/px4-gazebo/etc/init.d-posix/airframes/4003_gz_rc_cessna'],check=True,capture_output=True,text=True).stdout
-    defaults={}
+    defaults=dict(BRAKE_DEFAULTS)
     for index in range(1,6):
         travel=controls.surface_limit_rad if index<5 else controls.brake_limit_rad
         defaults[f'SIM_GZ_SV_MINA{index}']=-math.degrees(travel)
@@ -154,6 +188,24 @@ def qualify(output,library,actuator_test=False,flight_test=False):
                        ''.join(f'param set-default {key} {value:.15g}\n' for key,value in defaults.items()))
     assumptions.update(airframe_id=4999,inherited_airframe_id=4003,airframe_defaults=defaults,
         airframe_sha256=hashlib.sha256(airframe.read_bytes()).hexdigest(),inherited_airframe_sha256=hashlib.sha256(inherited.encode()).hexdigest())
+    if flight_phase=='swarm-reference':
+        (output/'point_mass_mission.json').write_text(json.dumps(document,indent=2,allow_nan=False)+'\n')
+        assumptions['point_mass_mission_sha256']=document['sha256']
+        source=ROOT/'src/swarm_sim/px4_compact_reference.py'
+        assumptions['source_sha256'][str(source.relative_to(ROOT))]=hashlib.sha256(source.read_bytes()).hexdigest()
+        source=ROOT/'src/swarm_sim/px4_scene.py'
+        assumptions['source_sha256'][str(source.relative_to(ROOT))]=hashlib.sha256(source.read_bytes()).hexdigest()
+        assumptions['scene_annotations']=dict(target_world_m=[1800.,0.,80.],target_radius_m=6.,
+            reference_radius_m=.12,visuals_only=True,lidar_visibility_bit=1)
+    if airborne_start:
+        from swarm_sim.gazebo_trim import trim
+        equilibrium=trim(force,controls,force.cruise_test_speed(),0.)
+        config=dict(schema='swarm-compact-warm-start-v1',model_sdf_sha256=hashlib.sha256(sdf.encode()).hexdigest(),
+                    force_binding_sha256=force.record()['binding_sha256'],control_sha256=controls.record()['sha256'],
+                    state=[0.,0.,80.,force.cruise_test_speed(),0.,0.,0.],body_pitch_rad=-equilibrium['alpha_rad'])
+        (output/'airborne-config.json').write_text(json.dumps(config,indent=2,allow_nan=False)+'\n')
+        assumptions.update(airborne_start=True,airborne_config_sha256=hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest(),
+                           airborne_trim=equilibrium)
     (output/'assumptions.json').write_text(json.dumps(assumptions,indent=2)+'\n')
     name='swarm-compact-startup-'+uuid.uuid4().hex
     args=['docker','run','--detach','--name',name,'--network','none',
@@ -163,6 +215,18 @@ def qualify(output,library,actuator_test=False,flight_test=False):
         '--env','PX4_GZ_MODELS=/runresults/models','--env','PX4_GZ_NO_FOLLOW=1','--env','LIBGL_ALWAYS_SOFTWARE=1',
         '--env','GZ_SIM_SYSTEM_PLUGIN_PATH=/runresults:/opt/px4-gazebo/lib/gz/plugins','--env','GZ_PARTITION='+name,
         '--entrypoint','/bin/sh',IMAGE,'/workspace/examples/gazebo/compact_physics/start_px4.sh']
+    if airborne_start:
+        offset=args.index('--entrypoint')
+        args[offset:offset]=['--env','SWARM_COMPACT_AIRBORNE=1','--env',
+            'PYTHONPATH=/workspace/examples/gazebo/compact_physics','--env','PYTHONDONTWRITEBYTECODE=1']
+    if gui:
+        display,auth=os.environ.get('DISPLAY'),os.environ.get('XAUTHORITY')
+        if not display or not auth or not Path(auth).is_file() or not Path('/tmp/.X11-unix').is_dir():
+            raise ValueError('GUI requires local DISPLAY and readable XAUTHORITY; use headless otherwise')
+        offset=args.index('--entrypoint')
+        args[offset:offset]=['--env','SWARM_COMPACT_GUI=1','--env','DISPLAY='+display,'--env','XAUTHORITY=/tmp/swarm-xauth',
+            '--mount','type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix,readonly',
+            '--mount',f'type=bind,src={Path(auth).resolve()},dst=/tmp/swarm-xauth,readonly']
     try:
         subprocess.run(args,check=True,capture_output=True,text=True,timeout=30)
         metadata=json.loads(subprocess.run(['docker','inspect',name],check=True,capture_output=True,text=True).stdout)[0]
@@ -171,6 +235,8 @@ def qualify(output,library,actuator_test=False,flight_test=False):
             '/workspace/.venv/bin/python','/workspace/scripts/qualify_compact_px4_startup.py','--worker']
         if actuator_test:command+=['--actuator-test']
         if flight_test:command+=['--flight-test']
+        if airborne_start:command+=['--airborne-start']
+        command+=['--flight-phase',flight_phase]
         result=subprocess.run(command,capture_output=True,text=True,timeout=720 if flight_test else 180)
         (output/'worker.log').write_text(result.stdout+result.stderr)
         report=json.loads((output/'startup-report.json').read_text())
@@ -185,16 +251,25 @@ def qualify(output,library,actuator_test=False,flight_test=False):
         logs=subprocess.run(['docker','logs',name],capture_output=True,text=True,timeout=15)
         (output/'px4-gazebo.log').write_text(logs.stdout+logs.stderr)
         copied=subprocess.run(['docker','cp',name+':/root/.local/share/px4/rootfs/fs/log',str(output/'px4-logs')],capture_output=True,text=True,timeout=30)
+        removed=subprocess.run(['docker','rm','--force',name],capture_output=True,timeout=15)
         (output/'runtime-end.json').write_text(json.dumps(dict(native_logs_copied=copied.returncode==0,
+            container_removed=removed.returncode==0,
             runtime_ended_by='owned simulation container shutdown; no in-air disarm command'),indent=2)+'\n')
-        subprocess.run(['docker','rm','--force',name],capture_output=True,timeout=15)
+        if removed.returncode!=0:raise RuntimeError('owned compact simulation container cleanup failed; inspect runtime-end.json')
 
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path);parser.add_argument('--library',type=Path);parser.add_argument('--worker',action='store_true')
     parser.add_argument('--actuator-test',action='store_true',help='Unarmed own servo/motor response checks in isolated simulation')
     parser.add_argument('--flight-test',action='store_true',help='Experimental native takeoff/circuit/landing after all actuator and native readiness gates')
+    parser.add_argument('--airborne-start',action='store_true',help='With --flight-test, initialize level flight at 80 m and 100 km/h after normal ground readiness/arm; skip runway takeoff')
+    parser.add_argument('--flight-phase',choices=('circuit-landing','cruise-turns','native-brake','swarm-reference'),default='circuit-landing',
+                        help='Full circuit/landing, warm cruise/turns, native brake response, or generated SwarmTraj level spatial reference')
+    parser.add_argument('--gui',action='store_true',help='Open Gazebo for the flight trial (local X11/XWayland, software rendering)')
     args=parser.parse_args()
     if not args.worker and (not args.output or not args.library):parser.error('output and library required')
-    r=worker(args.actuator_test or args.flight_test,args.flight_test) if args.worker else qualify(args.output,args.library,args.actuator_test or args.flight_test,args.flight_test)
+    if args.airborne_start and not args.flight_test:parser.error('--airborne-start requires --flight-test')
+    if args.flight_phase in ('cruise-turns','native-brake','swarm-reference') and not (args.flight_test and args.airborne_start):parser.error('selected phase requires --flight-test --airborne-start')
+    if args.gui and (args.worker or not args.flight_test):parser.error('--gui requires a host flight trial')
+    r=worker(args.actuator_test or args.flight_test,args.flight_test,args.airborne_start,args.flight_phase) if args.worker else qualify(args.output,args.library,args.actuator_test or args.flight_test,args.flight_test,args.airborne_start,args.flight_phase,args.gui)
     print(json.dumps(r,indent=2));raise SystemExit(0 if r['passed'] else 1)

@@ -175,10 +175,16 @@ after removal. Camera services remain GUI-only and cannot control aircraft.
 A separate [compact control-model qualification workflow](compact_control_model.md)
 uses an experimental 4999 airframe, profile-bound C++ forces/moments and own
 measured joint inputs. It has passed isolated trim, startup and unarmed
-actuator checks, but runway flight trials remain unsuccessful. It is not an
+actuator checks, and a dedicated warm initialization can skip runway takeoff
+after ground readiness/arm and physical/estimated-state gates. Historical
+runway flight trials remain unsuccessful. It is not an
 alternate production selector or a general replacement for the pinned Cessna
-adapter. Its raw native circuit is not a SwarmTraj executable plan and carries
-no point-mass timing, separation or obstacle validation.
+adapter. Alongside raw qualification circuits, its explicit `swarm-reference`
+phase now generates and preserves a C++ SwarmTraj mission, derives native
+waypoints, and observes spatial tracking and target passage. The first straight
+level single-aircraft case passed. General curved/dive/fleet reference execution
+remains unsupported; no point-mass timing, separation or obstacle validation
+transfers to native execution.
 
 The point-mass engine can accept higher declared speed ranges; it has not been
 qualified for 200 km/h flight. Such use needs representative aircraft parameters,

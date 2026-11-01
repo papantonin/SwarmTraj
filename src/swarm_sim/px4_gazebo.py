@@ -305,13 +305,13 @@ def reference_observation_rows(rows, item_count, release_time=None, first_sequen
             and (release_time is None or row['sim_time_s'] >= release_time)]
 
 
-def camera_status_matches(output):
+def camera_status_matches(output, target=CAMERA_FOLLOW_TARGET):
     """A service ACK alone does not establish an actual followed render target."""
     for line in output.splitlines():
         try:
             status = json.loads(line)
             if (status.get('trackMode') == 'FOLLOW'
-                    and status.get('followTarget', {}).get('name') == CAMERA_FOLLOW_TARGET
+                    and status.get('followTarget', {}).get('name') == target
                     and math.isclose(float(status.get('followPgain', 0)), 1., abs_tol=.001)
                     and all(math.isclose(float(status.get('followOffset', {}).get(axis, 0)), value, abs_tol=.01)
                             for axis, value in zip(('x', 'y', 'z'), CAMERA_FOLLOW_OFFSET))):
@@ -330,15 +330,17 @@ def camera_gz(args):
         return ''
 
 
-def initialize_camera_follow(timeout_s=30., before_arming=True):
+def initialize_camera_follow(timeout_s=30., before_arming=True, *, target=CAMERA_FOLLOW_TARGET):
     """One acknowledged startup attachment; no loop forcing user camera choices in flight."""
     if not math.isfinite(timeout_s) or timeout_s <= 0:
         raise ValueError('positive camera initialization timeout required')
+    if not isinstance(target,str) or re.fullmatch(r'[A-Za-z0-9_]+',target) is None:
+        raise ValueError('valid own GUI model name required')
     deadline = time.monotonic()+timeout_s
     while time.monotonic() < deadline:
         follow = camera_gz(['service', '-s', '/gui/follow', '--reqtype', 'gz.msgs.StringMsg',
             '--reptype', 'gz.msgs.Boolean', '--timeout', '1000',
-            '--req', f'data: "{CAMERA_FOLLOW_TARGET}"'])
+            '--req', f'data: "{target}"'])
         if re.search(r'\bdata:\s*true\b', follow):
             offset = camera_gz(['service', '-s', '/gui/follow/offset', '--reqtype', 'gz.msgs.Vector3d',
                 '--reptype', 'gz.msgs.Boolean', '--timeout', '1000',
@@ -348,11 +350,11 @@ def initialize_camera_follow(timeout_s=30., before_arming=True):
                 # 15 m/s aircraft. Publish only after the acknowledged services
                 # exist, then verify that this gain update actually arrived.
                 camera_gz(['topic', '-t', '/gui/track', '-m', 'gz.msgs.CameraTrack', '-p',
-                    f'track_mode: FOLLOW, follow_target: {{name: "{CAMERA_FOLLOW_TARGET}"}}, '
+                    f'track_mode: FOLLOW, follow_target: {{name: "{target}"}}, '
                     'follow_offset: {x: -6, y: -3, z: 3}, follow_pgain: 1.0, track_pgain: 1.0'])
                 status = camera_gz(['topic', '-e', '-t', '/gui/currently_tracked', '-n', '1', '--json-output'])
-                if camera_status_matches(status):
-                    return {'target': CAMERA_FOLLOW_TARGET, 'mode': 'FOLLOW',
+                if camera_status_matches(status,target):
+                    return {'target': target, 'mode': 'FOLLOW',
                             'offset_body_m': list(CAMERA_FOLLOW_OFFSET), 'pgain': 1., 'startup_status_confirmed': True}
         time.sleep(min(.2, max(0., deadline-time.monotonic())))
     context = 'before arming; no flight commands sent' if before_arming else 'after airborne Mission activation; experiment failed'

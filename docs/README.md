@@ -59,3 +59,6 @@ records or treating saved reports as independent trajectory revalidation.
 - [Single-aircraft backend, setup and limitations](px4_gazebo.md)
 - [Shared scenario editor and single-aircraft execution](gazebo_editor.md)
 - [Four-aircraft shared world, camera and observer](gazebo_fleet.md)
+- [Experimental reusable physical-profile force benches](compact_force_model.md)
+- [Illustrative compact geometry export](compact_gazebo_prototype.md)
+- [Experimental compact controls, warm start and generated-reference trials](compact_control_model.md)

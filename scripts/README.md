@@ -14,6 +14,24 @@ fingerprints reference them. Use `--help` for each Python command's options.
 | [test.sh](test.sh) | Pytest runner isolated from external ROS plugins |
 | [build_native.sh](build_native.sh) | Build/check the required C++20 engine and run standalone C++ tests |
 
+## Experimental Gazebo qualification
+
+These tools are separate from production planning. The reusable force benches
+accept physical aircraft profiles; the compact geometry and native flight
+bench remain specific to the illustrative 5 kg prototype. See the
+[qualification scope and measured results](../docs/compact_control_model.md).
+
+| Script | Purpose |
+|---|---|
+| [build_compact_gazebo_physics.sh](build_compact_gazebo_physics.sh) | Build the experimental C++ force/moment plugin |
+| [build_compact_gazebo_prototype.py](build_compact_gazebo_prototype.py) | Export and load-check compact geometry |
+| [qualify_compact_forces.py](qualify_compact_forces.py) | Independent algebraic force checks |
+| [qualify_compact_gazebo_forces.py](qualify_compact_gazebo_forces.py) | Measured Gazebo force/acceleration fixtures |
+| [qualify_control_model.py](qualify_control_model.py) | Independent moments and analytical trim |
+| [qualify_gazebo_trim.py](qualify_gazebo_trim.py) | Free-body trim and perturbation fixtures |
+| [qualify_gazebo_actuators.py](qualify_gazebo_actuators.py) | Measured simulated joint responses |
+| [qualify_compact_px4_startup.py](qualify_compact_px4_startup.py) | Isolated native startup, actuator, warm-flight and bounded generated-reference trials |
+
 ## Planning and execution comparisons
 
 | Script | Purpose |
