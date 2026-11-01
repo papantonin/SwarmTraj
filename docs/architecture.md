@@ -172,6 +172,14 @@ acknowledgement **and** verified scene absence. Missing scene replies cannot
 establish successful removal. Pair observation uses active overlapping intervals
 after removal. Camera services remain GUI-only and cannot control aircraft.
 
+A separate [compact control-model qualification workflow](compact_control_model.md)
+uses an experimental 4999 airframe, profile-bound C++ forces/moments and own
+measured joint inputs. It has passed isolated trim, startup and unarmed
+actuator checks, but runway flight trials remain unsuccessful. It is not an
+alternate production selector or a general replacement for the pinned Cessna
+adapter. Its raw native circuit is not a SwarmTraj executable plan and carries
+no point-mass timing, separation or obstacle validation.
+
 The point-mass engine can accept higher declared speed ranges; it has not been
 qualified for 200 km/h flight. Such use needs representative aircraft parameters,
 larger maneuvers and numerical/trajectory checks. Raising a JSON speed limit does

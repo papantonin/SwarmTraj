@@ -16,6 +16,8 @@ from swarm_sim.px4_gazebo import IMAGE,ROOT
 from swarm_sim.px4_prototype import MODEL,build_model,child
 from swarm_sim.trajectory2d import load_aircraft_profile
 from swarm_sim.gazebo_force_model import ForceAssumptions
+from swarm_sim.gazebo_force_model import ForceModel
+from swarm_sim.gazebo_control_model import ControlModel,verify_control_plugin
 
 
 def run(arguments,timeout=60):
@@ -28,8 +30,11 @@ def main():
     parser.add_argument('--check',action='store_true')
     parser.add_argument('--polar-library',type=Path,help='Explicit experimental C++ force plugin; bench only')
     parser.add_argument('--force-assumptions',type=Path,help='Versioned lift assumptions; requires polar-library')
+    parser.add_argument('--control-model',type=Path,help='Explicit own stability/inertia/joint model; requires polar-library')
     args=parser.parse_args();output=args.output.resolve();output.mkdir(parents=True,exist_ok=False)
     if args.force_assumptions and not args.polar_library:parser.error('force-assumptions requires polar-library')
+    if args.control_model and not args.polar_library:parser.error('control-model requires polar-library')
+    if args.control_model:verify_control_plugin(args.polar_library)
     official=run(['docker','run','--rm','--network','none','--entrypoint','/bin/cat',IMAGE,
                   '/opt/px4-gazebo/share/gz/models/rc_cessna/model.sdf']).stdout
     profile=load_aircraft_profile(ROOT/'examples/aircraft/compact_5kg.json')
@@ -37,16 +42,20 @@ def main():
         if args.polar_library.name!='libcompact_polar.so' or not args.polar_library.is_file():
             raise ValueError('polar-library must name an existing libcompact_polar.so')
         shutil.copyfile(args.polar_library,output/'libcompact_polar.so')
+    lift=ForceAssumptions.load(args.force_assumptions) if args.force_assumptions else ForceAssumptions()
+    controls=ControlModel.load(args.control_model,ForceModel(profile,lift)) if args.control_model else None
     sdf,assumptions=build_model(profile,official,(ROOT/'examples/gazebo/models/rc_cessna_lidar/model.sdf').read_text(),
                                 matched_polar=bool(args.polar_library),
-                                force_assumptions=ForceAssumptions.load(args.force_assumptions) if args.force_assumptions else None)
+                                force_assumptions=lift if args.polar_library else None,control_model=controls)
     if args.polar_library:assumptions['polar_binary_sha256']=hashlib.sha256(args.polar_library.read_bytes()).hexdigest()
+    if args.control_model:assumptions['required_control_api']=1
     (output/'model.sdf').write_text(sdf+'\n')
     (output/'LICENSE.PX4').write_text((ROOT/'examples/gazebo/LICENSE.PX4').read_text())
     assumptions['image']=IMAGE
     assumptions['official_template_sha256']=hashlib.sha256(official.encode()).hexdigest()
     assumptions['source_sha256']={str(path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest()
         for path in (ROOT/'src/swarm_sim/px4_prototype.py',ROOT/'src/swarm_sim/gazebo_force_model.py',Path(__file__).resolve(),
+                     ROOT/'src/swarm_sim/gazebo_control_model.py',
                      ROOT/'examples/gazebo/models/rc_cessna_lidar/model.sdf')}
     assumptions['physics_source_sha256']={str(path.relative_to(ROOT)):hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted((ROOT/'examples/gazebo/compact_physics').glob('*')) if path.is_file()}

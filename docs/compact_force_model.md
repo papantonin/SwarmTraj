@@ -31,8 +31,11 @@ For coordinated flight, choosing the same load factor yields the same lift
 and drag algebra as the planner's normalized polar. Flight-path angle is not
 angle of attack. The lift slope, zero-lift angle and elevator effectiveness
 remain hypothetical. CL clipping is not a post-stall model; reverse, vertical
-and sideslip flow are not qualified. Aerodynamic moments, angular-rate damping,
-PX4 actuator binding and wind are not implemented. Static bench fractions
+and large sideslip flow are not qualified. The force-only mode supplies no
+aerodynamic moments or angular-rate damping. An explicit
+[moment/joint extension](compact_control_model.md) now adds illustrative moments
+and own measured actuator inputs. Wind and post-stall flight remain unsupported.
+Static bench fractions
 therefore cannot establish trim, stability or closed-loop flight behavior.
 
 ## Build and checks
@@ -71,10 +74,10 @@ The default exporter retains its earlier inherited model. The new force model
 requires an explicit library path and remains unavailable in production PX4
 launchers. `ideal_airbrake_implemented=true` describes the force component;
 `px4_flight_qualified=false` and the missing actuator binding remain explicit.
-Next work is aerodynamic moments and actuator responses, then trim/control
-qualification, an isolated native adapter, and single-aircraft flights before
-fleet experiments. No timing or separation validation transfers from the
-point-mass model.
+The moment/joint extension has passed isolated trim and actuator checks, but
+native runway flight qualification remains unsuccessful. Individual native
+flight qualification precedes reference integration and fleet experiments.
+No timing or separation validation transfers from the point-mass model.
 
 ## Observed checks
 

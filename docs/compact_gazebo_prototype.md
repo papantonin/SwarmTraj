@@ -26,6 +26,9 @@ An explicit experimental C++ force component is now available with
 the inherited LiftDrag forces and implements the profile polar and ideal brake;
 static bench inputs still lack PX4 actuator binding and aerodynamic moments.
 The default export described below retains the inherited force model.
+The optional [control-model extension](compact_control_model.md) supplies
+moments, explicit inertias and measured own-joint inputs. Its startup and
+actuator checks pass; native runway flight does not yet pass qualification.
 The force benches accept other physical v3 aircraft profiles and separate
 versioned lift assumptions. This does not remove this geometry exporter's
 5 kg / 0.30 m restriction. Its optional `--force-assumptions` requires
@@ -53,14 +56,14 @@ instance or used to bypass readiness, arming, feasibility or landing checks.
 The pinned image accepted the generated SDF and completed the 250-step physics
 load check. Its usual `gz_frame_id` extension warnings and isolated-network
 loopback discovery messages are retained in logs. This checks parsing and
-loading only: sensor readiness, trim, stability, airspeed tracking, dive
-braking, recovery, takeoff/landing and swarm execution have not been tested.
+loading only. That original build check provides no sensor-readiness, trim,
+stability, tracking, recovery, landing or swarm-execution qualification.
 No point-mass timing, tracking or separation claim transfers to this fixture.
 
 The C++ force/drag and braking algebra and its application in Gazebo have passed
-isolated comparisons. Next work is aerodynamic moments and actuator binding,
-followed by longitudinal/lateral trim and control
-responses, then introduce an explicit isolated PX4 adapter with parameter
+isolated comparisons. The moment/joint extension also passes isolated trim,
+unarmed native startup and actuator response checks. Remaining work is native
+individual flight qualification, then an explicit reference adapter with parameter
 readback and single-aircraft flight qualification. Only after those gates
 should four independent PX4 instances be exercised. Shared scenario schemas
 must persist phase-speed/routing/selection settings before these missions can

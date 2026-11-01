@@ -167,3 +167,12 @@ canonical identity. The 2.5 kg example without an airbrake and the compact
 5 kg example passed actual Gazebo force checks, including an altered lift
 assumption record. Geometry and PX4 tuning remain aircraft-specific; legacy
 normalized profiles cannot supply missing physical mass/wing data implicitly.
+
+The [moment/joint extension](compact_control_model.md) now adds coordinate-explicit
+roll/pitch/yaw moments, damping, native servo travel initialization, a measured
+own-joint input path and passive rolling gear with exact component mass
+accounting. Analytical trim, five free-body Gazebo fixtures, joint steps and
+six unarmed PX4 servo/motor checks pass. A dedicated 4999 simulation airframe
+preserves the original 4003/Cessna path. Runway flight trials remain failures
+and are retained; native reference/fleet integration is not qualified by the
+lower-level checks. No safety acceptance limits were widened around them.

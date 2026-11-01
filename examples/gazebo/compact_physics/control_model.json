@@ -1,0 +1,32 @@
+{
+  "schema": "swarm-gazebo-control-model-v1",
+  "calibration_status": "illustrative",
+  "span_m": 0.56,
+  "chord_m": 0.21428571428571427,
+  "alpha_trim_rad": 0.12208034371643392,
+  "roll_beta": 0.05,
+  "roll_damping": 0.8,
+  "roll_control": 0.15,
+  "pitch_stiffness": 0.8,
+  "pitch_damping": 5,
+  "pitch_control": 0.6,
+  "yaw_stiffness": 0.35,
+  "yaw_damping": 0.6,
+  "yaw_control": 0.12,
+  "sideforce": 0.4,
+  "surface_limit_rad": 0.5,
+  "brake_limit_rad": 0.7,
+  "base_inertia_kg_m2": [
+    0.04,
+    0.04,
+    0.07
+  ],
+  "force_binding_sha256": "6def54d03ef5688398969b01b77f6e13c5172d6c5cd140802241ecea1cb99dce",
+  "servo_p_gain": 0.001,
+  "servo_damping_nms": 5e-05,
+  "servo_effort_nm": 0.01,
+  "servo_rate_rad_s": 3.0,
+  "wheel_damping_nms": 1e-06,
+  "wheel_radius_m": 0.03,
+  "wheel_mass_kg": 0.1
+}
